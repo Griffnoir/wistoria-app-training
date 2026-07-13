@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#16c7b7">
+    <title>Calendrier - Wistoria</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="assets/icons/icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/workout.css">
+    <link rel="stylesheet" href="css/music.css">
+    <link rel="stylesheet" href="css/manual.css">
+    <link rel="stylesheet" href="css/animations.css">
+    <link rel="stylesheet" href="css/responsive.css">
+  </head>
+  <body data-page="calendar">
+    <div class="app-shell">
+      <aside class="sidebar" data-sidebar></aside>
+      <main class="main">
+        <header class="topbar">
+          <button class="btn icon-btn mobile-menu" data-menu aria-label="Ouvrir le menu">☰</button>
+          <div>
+            <h1>Calendrier</h1>
+            <p>Planifie les jours d'entraînement, ajoute des objectifs et vois les séances effectuées.</p>
+          </div>
+          <div class="toolbar">
+            <button class="btn primary" id="addPlanBtn">Ajouter un objectif</button>
+          </div>
+        </header>
+
+        <section class="grid two">
+          <div class="panel">
+            <div class="section-head">
+              <button class="btn icon-btn" id="prevMonth" aria-label="Mois précédent">‹</button>
+              <div>
+                <h2 id="calendarTitle">Mois</h2>
+                <p>Jours planifiés, complétés et objectifs.</p>
+              </div>
+              <button class="btn icon-btn" id="nextMonth" aria-label="Mois suivant">›</button>
+            </div>
+            <div id="calendarGrid"></div>
+          </div>
+          <div class="panel">
+            <div class="section-head">
+              <div>
+                <h2>Objectifs planifiés</h2>
+                <p>Organisation par date.</p>
+              </div>
+            </div>
+            <div class="plan-list" id="planList"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="planDialog" class="panel">
+      <form id="planForm" class="form-grid" method="dialog">
+        <div class="field">
+          <label for="planDate">Date</label>
+          <input id="planDate" type="date" required>
+        </div>
+        <div class="field">
+          <label for="planTitle">Objectif</label>
+          <input id="planTitle" required placeholder="Souplesse jambes">
+        </div>
+        <div class="field full">
+          <label for="planProgram">Programme lié</label>
+          <select id="planProgram"></select>
+        </div>
+        <div class="toolbar field full">
+          <button class="btn primary" value="save">Enregistrer</button>
+          <button class="btn" value="cancel">Annuler</button>
+        </div>
+      </form>
+    </dialog>
+
+    <nav class="bottom-nav" data-bottom-nav></nav>
+    <div class="toast-stack" id="toastStack"></div>
+    <script src="js/vendor/chart.umd.min.js"></script>
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>

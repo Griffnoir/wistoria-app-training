@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#16c7b7">
+    <title>Paramètres - Wistoria</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="assets/icons/icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/workout.css">
+    <link rel="stylesheet" href="css/music.css">
+    <link rel="stylesheet" href="css/manual.css">
+    <link rel="stylesheet" href="css/animations.css">
+    <link rel="stylesheet" href="css/responsive.css">
+  </head>
+  <body data-page="settings">
+    <div class="app-shell">
+      <aside class="sidebar" data-sidebar></aside>
+      <main class="main">
+        <header class="topbar">
+          <button class="btn icon-btn mobile-menu" data-menu aria-label="Ouvrir le menu">☰</button>
+          <div>
+            <h1>Paramètres</h1>
+            <p>Préférences, voix, vibration, export/import et objectifs personnels.</p>
+          </div>
+        </header>
+
+        <section class="grid two">
+          <form class="panel form-grid" id="settingsForm">
+            <div class="field">
+              <label for="theme">Mode</label>
+              <select id="theme">
+                <option value="dark">Sombre</option>
+                <option value="light">Clair</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="voiceEnabled">Voix</label>
+              <select id="voiceEnabled">
+                <option value="true">Activée</option>
+                <option value="false">Désactivée</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="soundVolume">Volume sonore</label>
+              <input id="soundVolume" type="range" min="0" max="1" step="0.05">
+            </div>
+            <div class="field">
+              <label for="vibrationEnabled">Vibration</label>
+              <select id="vibrationEnabled">
+                <option value="true">Activée</option>
+                <option value="false">Désactivée</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="timeUnit">Unités temps</label>
+              <select id="timeUnit">
+                <option value="seconds">Secondes</option>
+                <option value="minutes">Minutes</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="dailyGoal">Objectif quotidien en minutes</label>
+              <input id="dailyGoal" type="number" min="1" value="20">
+            </div>
+            <div class="field">
+              <label for="musicDucking">Voix sur musique</label>
+              <select id="musicDucking">
+                <option value="true">Baisser la musique</option>
+                <option value="false">Garder le volume</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="musicPauseOnStop">Arrêt séance</label>
+              <select id="musicPauseOnStop">
+                <option value="true">Pause musique</option>
+                <option value="false">Continuer musique</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="spotifyClientId">Client ID Spotify</label>
+              <input id="spotifyClientId" placeholder="Optionnel">
+            </div>
+            <div class="field">
+              <label for="boomplayWorkoutUrl">Playlist Boomplay</label>
+              <input id="boomplayWorkoutUrl" placeholder="https://www.boomplay.com/">
+            </div>
+            <div class="field full">
+              <label for="personalGoals">Objectifs personnels</label>
+              <textarea id="personalGoals" placeholder="Grand écart latéral, high kick tête, hanches plus fluides..."></textarea>
+            </div>
+            <div class="toolbar field full">
+              <button class="btn primary">Enregistrer</button>
+              <button type="button" class="btn" id="testVoiceBtn">Tester la voix</button>
+            </div>
+          </form>
+
+          <div class="panel">
+            <h2>Sauvegarde</h2>
+            <p>Les préférences restent dans LocalStorage. Les programmes, historiques et plans sont stockés dans IndexedDB.</p>
+            <div class="toolbar">
+              <button class="btn" data-export>Exporter JSON</button>
+              <label class="btn" for="importFile">Importer JSON</label>
+              <input class="hidden" id="importFile" type="file" accept="application/json">
+            </div>
+            <div class="empty-state" id="storageState">Stockage local prêt.</div>
+          </div>
+          <div class="panel">
+            <h2>A propos / Manuel</h2>
+            <p>Retrouve le guide complet de Wistoria : premier demarrage, programmes, minuteurs, musique, progression, PWA, sauvegarde et FAQ.</p>
+            <div class="toolbar">
+              <a class="btn primary" href="manual.html">Ouvrir le manuel</a>
+              <a class="btn" href="manual.html#training-tips">Conseils d'entrainement</a>
+            </div>
+            <div class="empty-state">Le manuel est interactif : recherche, sommaire, mode debutant/avance et tutoriel anime.</div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <nav class="bottom-nav" data-bottom-nav></nav>
+    <div class="toast-stack" id="toastStack"></div>
+    <script src="js/vendor/chart.umd.min.js"></script>
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>
