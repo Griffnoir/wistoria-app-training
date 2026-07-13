@@ -2,6 +2,7 @@ import { getAll, getPrefs, putItem, savePrefs, deleteItem, uid } from "./storage
 import { toast } from "./notifications.js";
 
 const MUSIC_STATE_KEY = "wistoria:musicState";
+const MINI_PLAYER_HIDDEN_KEY = "wistoria:miniPlayerHidden";
 const SPOTIFY_TOKEN_KEY = "wistoria:spotifyToken";
 const SPOTIFY_VERIFIER_KEY = "wistoria:spotifyVerifier";
 const SPOTIFY_SCOPES = [
@@ -195,11 +196,36 @@ function exposeMusicApi() {
   };
 }
 
+function isMiniPlayerHidden() {
+  return localStorage.getItem(MINI_PLAYER_HIDDEN_KEY) === "true";
+}
+
+function applyMiniPlayerMode() {
+  const hidden = isMiniPlayerHidden();
+  const player = document.querySelector(".music-mini-player");
+  const launcher = document.querySelector(".music-song-fab");
+  const toggle = document.querySelector("[data-music-toggle-mini]");
+
+  document.body.classList.toggle("music-mini-hidden", hidden);
+  player?.classList.toggle("is-hidden", hidden);
+  if (launcher) launcher.hidden = !hidden;
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", String(!hidden));
+    toggle.setAttribute("aria-label", hidden ? "Afficher le lecteur audio" : "Masquer le lecteur audio");
+  }
+}
+
+function toggleMiniPlayerMode() {
+  localStorage.setItem(MINI_PLAYER_HIDDEN_KEY, String(!isMiniPlayerHidden()));
+  applyMiniPlayerMode();
+}
+
 function renderMiniPlayer() {
   if (document.querySelector(".music-mini-player")) return;
   document.body.classList.add("has-music-player");
   const player = document.createElement("section");
   player.className = "music-mini-player";
+  player.setAttribute("aria-label", "Mini lecteur audio");
   player.innerHTML = `
     <div class="mini-cover">♪</div>
     <div class="mini-meta">
@@ -211,8 +237,17 @@ function renderMiniPlayer() {
       <button class="btn primary icon-btn" data-music-action="play" data-music-play aria-label="Lecture ou pause">▶</button>
       <button class="btn icon-btn" data-music-action="next" aria-label="Suivant">›</button>
       <button class="btn icon-btn" data-open-music-panel aria-label="Ouvrir le lecteur">▣</button>
+      <button class="btn icon-btn mini-toggle" data-music-toggle-mini aria-expanded="true" aria-label="Masquer le lecteur audio">⌄</button>
     </div>`;
-  document.body.append(player);
+  const launcher = document.createElement("button");
+  launcher.className = "btn primary icon-btn music-song-fab";
+  launcher.type = "button";
+  launcher.hidden = true;
+  launcher.setAttribute("data-music-toggle-mini", "");
+  launcher.setAttribute("aria-label", "Afficher le lecteur audio");
+  launcher.textContent = "♪";
+  document.body.append(player, launcher);
+  applyMiniPlayerMode();
 }
 
 function openMusicOverlay() {
@@ -498,6 +533,7 @@ function attachMusicEvents() {
     }
     if (event.target.matches("[data-open-music-panel]")) openMusicOverlay();
     if (event.target.matches("[data-close-music-panel]")) event.target.closest(".music-overlay")?.remove();
+    if (event.target.closest("[data-music-toggle-mini]")) toggleMiniPlayerMode();
   });
 
   window.addEventListener("wistoria:speech-start", () => {

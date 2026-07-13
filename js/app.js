@@ -20,6 +20,7 @@ import { generateProgramFromPrompt, initWorkoutPage } from "./workout.js";
 
 let currentPage = document.body.dataset.page;
 let loaderTimer;
+let deferredInstallPrompt = null;
 
 const navItems = [
   ["index.html", "H", "Accueil", "home"],
@@ -233,6 +234,7 @@ async function exportJson() {
 
 function initSettingsPage() {
   const prefs = getPrefs();
+  updateInstallButton();
   Object.entries(prefs).forEach(([key, value]) => {
     const field = document.getElementById(key);
     if (!field) return;
@@ -259,6 +261,7 @@ function initSettingsPage() {
   });
 
   document.getElementById("testVoiceBtn")?.addEventListener("click", () => speak("Commencez l'etirement. 10 secondes restantes."));
+  document.getElementById("installAppBtn")?.addEventListener("click", installApp);
   document.getElementById("importFile")?.addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -267,6 +270,51 @@ function initSettingsPage() {
     applyTheme();
     toast("Import termine.");
   });
+}
+
+function isAppInstalled() {
+  return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+}
+
+function updateInstallButton() {
+  const button = document.getElementById("installAppBtn");
+  const state = document.getElementById("installAppState");
+  if (!button) return;
+
+  if (isAppInstalled()) {
+    button.disabled = true;
+    button.textContent = "Application installee";
+    if (state) state.textContent = "Wistoria est deja installee sur cet appareil.";
+    return;
+  }
+
+  button.disabled = false;
+  button.textContent = deferredInstallPrompt ? "Installer l'application" : "Telecharger l'application";
+  if (state) {
+    state.textContent = deferredInstallPrompt
+      ? "Installation disponible depuis ce navigateur."
+      : "Si rien ne s'ouvre, utilise le menu du navigateur puis Installer l'application ou Ajouter a l'ecran d'accueil.";
+  }
+}
+
+async function installApp() {
+  if (isAppInstalled()) {
+    toast("Wistoria est deja installee.");
+    updateInstallButton();
+    return;
+  }
+
+  if (!deferredInstallPrompt) {
+    toast("Installation directe indisponible ici. Utilise le menu du navigateur pour installer l'app.");
+    updateInstallButton();
+    return;
+  }
+
+  deferredInstallPrompt.prompt();
+  const choice = await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  updateInstallButton();
+  toast(choice.outcome === "accepted" ? "Installation lancee." : "Installation annulee.");
 }
 
 async function renderHome() {
@@ -347,6 +395,18 @@ async function init() {
   registerServiceWorker();
   hideLoader(520);
 }
+
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  updateInstallButton();
+});
+
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  updateInstallButton();
+  toast("Wistoria est installee.");
+});
 
 init().catch((error) => {
   console.error(error);

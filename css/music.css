@@ -177,10 +177,49 @@
   background: rgba(12, 17, 28, 0.92);
   backdrop-filter: blur(18px);
   box-shadow: var(--shadow);
+  overflow: hidden;
+  transition:
+    opacity 220ms var(--ease-standard),
+    visibility 220ms var(--ease-standard),
+    transform 320ms var(--ease-smooth),
+    box-shadow 320ms var(--ease-standard),
+    background 320ms var(--ease-standard);
 }
 
 [data-theme="light"] .music-mini-player {
   background: rgba(255, 255, 255, 0.92);
+}
+
+.music-mini-player.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(18px) scale(0.98);
+  visibility: hidden;
+}
+
+.mini-toggle {
+  flex: 0 0 auto;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.music-song-fab {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 56;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 18px 44px rgba(22, 199, 183, 0.28);
+  transition:
+    transform 220ms var(--ease-standard),
+    box-shadow 220ms var(--ease-standard),
+    filter 220ms var(--ease-standard);
+}
+
+.music-song-fab:hover {
+  filter: saturate(1.08);
+  box-shadow: 0 22px 54px rgba(139, 92, 246, 0.3);
 }
 
 .mini-cover {
@@ -190,6 +229,7 @@
   place-items: center;
   border-radius: 7px;
   background: linear-gradient(135deg, var(--teal), var(--violet));
+  transition: width 320ms var(--ease-smooth), transform 320ms var(--ease-smooth);
 }
 
 .mini-meta {
@@ -228,6 +268,10 @@ body.has-music-player .main {
   padding-bottom: 138px;
 }
 
+body.has-music-player.music-mini-hidden .main {
+  padding-bottom: 34px;
+}
+
 @media (max-width: 1120px) {
   .music-layout,
   .playlist-grid {
@@ -248,11 +292,24 @@ body.has-music-player .main {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
+  .music-song-fab {
+    right: 10px;
+    bottom: 10px;
+  }
+
   body.has-music-player .main {
     padding-bottom: 112px;
   }
 
+  body.has-music-player.music-mini-hidden .main {
+    padding-bottom: 30px;
+  }
+
   .bottom-nav {
     margin-bottom: 96px;
+  }
+
+  body.music-mini-hidden .bottom-nav {
+    margin-bottom: 64px;
   }
 }
