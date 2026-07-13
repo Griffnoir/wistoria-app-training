@@ -1,4 +1,4 @@
-const CACHE_NAME = "wistoria-training-v7";
+const CACHE_NAME = "wistoria-training-v8";
 const APP_SHELL = [
   "./",
   "./index.html",

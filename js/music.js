@@ -208,7 +208,10 @@ function applyMiniPlayerMode() {
 
   document.body.classList.toggle("music-mini-hidden", hidden);
   player?.classList.toggle("is-hidden", hidden);
-  if (launcher) launcher.hidden = !hidden;
+  if (launcher) {
+    launcher.hidden = !hidden;
+    launcher.setAttribute("aria-hidden", String(!hidden));
+  }
   if (toggle) {
     toggle.setAttribute("aria-expanded", String(!hidden));
     toggle.setAttribute("aria-label", hidden ? "Afficher le lecteur audio" : "Masquer le lecteur audio");

@@ -217,6 +217,10 @@
     filter 220ms var(--ease-standard);
 }
 
+.music-song-fab[hidden] {
+  display: none !important;
+}
+
 .music-song-fab:hover {
   filter: saturate(1.08);
   box-shadow: 0 22px 54px rgba(139, 92, 246, 0.3);
