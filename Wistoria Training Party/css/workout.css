@@ -1,0 +1,109 @@
+.builder-layout {
+  display: grid;
+  grid-template-columns: minmax(340px, 0.86fr) minmax(0, 1.14fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.exercise-card {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.exercise-card.dragging {
+  opacity: 0.55;
+  outline: 2px solid var(--teal);
+}
+
+.exercise-thumb {
+  width: 76px;
+  aspect-ratio: 1;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, rgba(22, 199, 183, 0.18), rgba(255, 179, 92, 0.12));
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.exercise-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.exercise-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.session-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(320px, 1.08fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.session-visual {
+  min-height: 430px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.session-visual img {
+  width: min(100%, 560px);
+}
+
+.timer-panel {
+  display: grid;
+  gap: 18px;
+  align-content: center;
+}
+
+.timer-number {
+  display: grid;
+  place-items: center;
+  min-height: 170px;
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(4rem, 13vw, 8.5rem);
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.timer-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.timer-meta div {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.timer-meta span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.timer-meta strong {
+  display: block;
+  margin-top: 5px;
+}
+
+.session-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pulse-timer {
+  animation: timerPulse 1s ease-in-out infinite;
+}

@@ -1,0 +1,10 @@
+{
+  "name": "wistoria-app-training",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "node server.mjs",
+    "check": "node --check js/app.js"
+  }
+}

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#16c7b7">
+    <title>Statistiques - Wistoria</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="assets/icons/icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/workout.css">
+    <link rel="stylesheet" href="css/music.css">
+    <link rel="stylesheet" href="css/manual.css">
+    <link rel="stylesheet" href="css/animations.css">
+    <link rel="stylesheet" href="css/responsive.css">
+  </head>
+  <body data-page="statistics">
+    <div class="app-shell">
+      <aside class="sidebar" data-sidebar></aside>
+      <main class="main">
+        <header class="topbar">
+          <button class="btn icon-btn mobile-menu" data-menu aria-label="Ouvrir le menu">☰</button>
+          <div>
+            <h1>Statistiques</h1>
+            <p>Analyse ton volume, ta fréquence et les groupes musculaires travaillés.</p>
+          </div>
+          <div class="toolbar">
+            <button class="btn" data-export>Exporter JSON</button>
+          </div>
+        </header>
+
+        <section class="grid three" id="statsMetrics"></section>
+
+        <section class="grid two">
+          <div class="panel">
+            <h2>Fréquence</h2>
+            <div class="canvas-wrap"><canvas id="frequencyChart"></canvas></div>
+          </div>
+          <div class="panel">
+            <h2>Groupes musculaires</h2>
+            <div class="canvas-wrap"><canvas id="muscleChart"></canvas></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Historique</h2>
+          <div class="plan-list" id="historyList"></div>
+        </section>
+      </main>
+    </div>
+    <nav class="bottom-nav" data-bottom-nav></nav>
+    <div class="toast-stack" id="toastStack"></div>
+    <script src="js/vendor/chart.umd.min.js"></script>
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>
