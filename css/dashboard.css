@@ -1,0 +1,55 @@
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+  gap: 16px;
+}
+
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.quick-action {
+  min-height: 96px;
+  justify-content: flex-start;
+  align-items: flex-start;
+  flex-direction: column;
+  text-align: left;
+}
+
+.quick-action span {
+  font-size: 1.35rem;
+}
+
+.xp-ring {
+  --value: 0deg;
+  width: 168px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  margin: 8px auto 18px;
+  border-radius: 50%;
+  background: conic-gradient(var(--teal) var(--value), rgba(255, 255, 255, 0.08) 0);
+  position: relative;
+}
+
+.xp-ring::after {
+  content: "";
+  position: absolute;
+  inset: 13px;
+  border-radius: 50%;
+  background: var(--panel-strong);
+}
+
+.xp-ring strong {
+  position: relative;
+  z-index: 1;
+  font-size: 2rem;
+}
+
+.xp-ring small {
+  position: relative;
+  z-index: 1;
+  color: var(--muted);
+}
