@@ -33,7 +33,10 @@ const APP_SHELL = [
   "./assets/icons/icon.svg",
   "./assets/images/martial-flow.svg",
   "./assets/images/stretch-hips.svg",
-  "./assets/images/stretch-split.svg"
+  "./assets/images/stretch-split.svg",
+  "./activity.html",
+  "./css/activity.css",
+  "./js/activity.js"
 ];
 
 self.addEventListener("install", (event) => {

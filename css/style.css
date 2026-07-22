@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   color-scheme: dark;
   --bg: #080b12;
   --bg-soft: #0d1220;
@@ -46,23 +46,11 @@ html {
 body {
   min-height: 100%;
   margin: 0;
-  background:
-    radial-gradient(circle at 18% 10%, rgba(22, 199, 183, 0.18), transparent 32rem),
-    radial-gradient(circle at 88% 5%, rgba(255, 179, 92, 0.14), transparent 24rem),
-    linear-gradient(135deg, var(--bg), var(--bg-soft));
+  background: var(--bg);
   color: var(--text);
 }
 
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background-image: linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
-  background-size: 44px 44px;
-  mask-image: linear-gradient(to bottom, black, transparent 80%);
-}
+
 
 a {
   color: inherit;
@@ -624,3 +612,4 @@ dialog::backdrop {
 .hidden {
   display: none !important;
 }
+

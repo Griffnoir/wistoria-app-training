@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#16c7b7">
+    <title>Activité - Wistoria</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="assets/icons/icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/workout.css">
+    <link rel="stylesheet" href="css/music.css">
+    <link rel="stylesheet" href="css/manual.css">
+    <link rel="stylesheet" href="css/animations.css">
+    <link rel="stylesheet" href="css/responsive.css">
+    <link rel="stylesheet" href="css/activity.css">
+  </head>
+  <body data-page="activity">
+    <div class="app-shell">
+      <aside class="sidebar" data-sidebar></aside>
+      <main class="main">
+        <header class="topbar">
+          <button class="btn icon-btn mobile-menu" data-menu aria-label="Ouvrir le menu">☰</button>
+          <div>
+            <h1>Activité</h1>
+            <p>Suis tes déplacements, calories et visualise ton parcours.</p>
+          </div>
+          <div class="toolbar">
+            <button class="btn primary" id="startActivityBtn">▶ Démarrer</button>
+            <button class="btn warning" id="stopActivityBtn" disabled>⏹ Arrêter</button>
+            <button class="btn" id="saveActivityBtn" disabled>💾 Sauvegarder</button>
+          </div>
+        </header>
+
+        <!-- Statistiques -->
+        <section class="activity-stats">
+          <div class="stat-card">
+            <span class="stat-label">Pas</span>
+            <strong id="stepCount">0</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Distance</span>
+            <strong id="distanceCount">0.00 <small>km</small></strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Calories</span>
+            <strong id="caloriesCount">0 <small>kcal</small></strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Durée</span>
+            <strong id="durationCount">00:00</strong>
+          </div>
+        </section>
+
+        <!-- Contrôles (type d'activité) -->
+        <div class="activity-controls">
+          <div class="field">
+            <label for="activityType">Type d'activité</label>
+            <select id="activityType">
+              <option value="walk">Marche</option>
+              <option value="run">Course</option>
+              <option value="bike">Vélo</option>
+            </select>
+          </div>
+          <div style="flex:1; text-align: right; color: var(--muted); font-size: 0.85rem;">
+            ⚡ Estimation basée sur votre poids (<span id="displayWeight">70</span> kg)
+          </div>
+        </div>
+
+        <!-- Carte -->
+        <section class="activity-map-wrap">
+          <div id="map"></div>
+          <div id="mapPlaceholder" class="map-placeholder">
+            <div>
+              <p style="font-size: 2rem; margin: 0;">🗺️</p>
+              <p>Chargement de la carte...</p>
+              <button class="btn primary" id="retryMapBtn">Réessayer</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Historique -->
+        <section class="activity-history panel">
+          <div class="section-head">
+            <div>
+              <h2>Historique</h2>
+              <p>Vos dernières sessions enregistrées.</p>
+            </div>
+            <button class="btn ghost" id="refreshHistoryBtn">⟳</button>
+          </div>
+          <div id="activityHistoryList"></div>
+        </section>
+      </main>
+    </div>
+    <nav class="bottom-nav" data-bottom-nav></nav>
+    <div class="toast-stack" id="toastStack"></div>
+    <script src="js/vendor/chart.umd.min.js"></script>
+    <!-- Google Maps API avec callback initMap -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=VOTRE_CLE_API&callback=initMap&libraries=geometry" async defer></script>
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>

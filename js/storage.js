@@ -1,6 +1,6 @@
 const DB_NAME = "wistoria-training-db";
 const DB_VERSION = 2;
-const STORES = ["programs", "history", "plans", "records", "musicTracks", "musicPlaylists"];
+const STORES = ["programs", "history", "plans", "records", "musicTracks", "musicPlaylists", "activities"];
 
 export const DEFAULT_PREFS = {
   theme: "dark",
@@ -13,7 +13,9 @@ export const DEFAULT_PREFS = {
   musicDucking: true,
   musicPauseOnStop: true,
   spotifyClientId: "",
-  boomplayWorkoutUrl: "https://www.boomplay.com/"
+  boomplayWorkoutUrl: "https://www.boomplay.com/",
+  // NOUVEAU : poids en kg pour le calcul des calories
+  weight: 70,
 };
 
 export const EXERCISE_LIBRARY = [

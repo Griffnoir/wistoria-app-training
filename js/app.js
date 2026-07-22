@@ -30,7 +30,9 @@ const navItems = [
   ["music.html", "M", "Musique", "music"],
   ["calendar.html", "C", "Calendrier", "calendar"],
   ["statistics.html", "S", "Statistiques", "statistics"],
-  ["settings.html", "P", "Parametres", "settings"]
+  ["settings.html", "P", "Parametres", "settings"],
+  // Nouvelle entrée
+  ["activity.html", "A", "Activité", "activity"]
 ];
 
 const pageExtras = ["exerciseDialog", "planDialog"];
@@ -254,7 +256,9 @@ function initSettingsPage() {
       musicDucking: document.getElementById("musicDucking").value === "true",
       musicPauseOnStop: document.getElementById("musicPauseOnStop").value === "true",
       spotifyClientId: document.getElementById("spotifyClientId").value.trim(),
-      boomplayWorkoutUrl: document.getElementById("boomplayWorkoutUrl").value.trim()
+      boomplayWorkoutUrl: document.getElementById("boomplayWorkoutUrl").value.trim(),
+      // AJOUT
+    weight: Number(document.getElementById("weight").value || 70)
     });
     document.documentElement.dataset.theme = next.theme;
     toast("Parametres enregistres.");
@@ -371,6 +375,10 @@ async function runCurrentPage() {
   if (currentPage === "statistics") await renderStatisticsPage();
   if (currentPage === "settings") initSettingsPage();
   observeCards();
+  if (currentPage === "activity") {
+    const { initActivityPage } = await import("./activity.js");
+    initActivityPage();
+  }
 }
 
 async function registerServiceWorker() {
