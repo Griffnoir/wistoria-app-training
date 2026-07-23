@@ -1,4 +1,4 @@
-// js/activity.js - Version Leaflet (point bleu, recentrage, objectifs, météo, partage, graphique)
+// js/activity.js - Version complète (sauvegarde + partage corrigés)
 
 import { getAll, getPrefs, putItem, uid } from "./storage.js";
 import { toast } from "./notifications.js";
@@ -6,7 +6,6 @@ import { toast } from "./notifications.js";
 // --- Constantes ---
 const MET = { walk: 3.5, run: 8.0, bike: 5.5 };
 const STEP_LENGTH_M = 0.78;
-const DAILY_GOAL_STEPS = 10000;
 
 // --- État ---
 let state = {
@@ -19,12 +18,10 @@ let state = {
   steps: 0,
   calories: 0,
   lastPosition: null,
-  goalDistance: 5,
 };
 
 // --- Éléments DOM ---
 const stepEl = document.getElementById("stepCount");
-const stepGoalEl = document.getElementById("stepGoal");
 const distanceEl = document.getElementById("distanceCount");
 const caloriesEl = document.getElementById("caloriesCount");
 const durationEl = document.getElementById("durationCount");
@@ -36,14 +33,11 @@ const resetBtn = document.getElementById("resetActivityBtn");
 const weatherBtn = document.getElementById("weatherBtn");
 const historyList = document.getElementById("activityHistoryList");
 const activityType = document.getElementById("activityType");
-const goalDistanceSelect = document.getElementById("goalDistance");
 const displayWeight = document.getElementById("displayWeight");
 const mapPlaceholder = document.getElementById("mapPlaceholder");
 const retryMapBtn = document.getElementById("retryMapBtn");
 const refreshHistoryBtn = document.getElementById("refreshHistoryBtn");
 const stepsChartCanvas = document.getElementById("stepsChart");
-const goalProgress = document.getElementById("goalProgress");
-const goalLabel = document.getElementById("goalLabel");
 
 // Contrôles carte
 const centerMapBtn = document.getElementById("centerMapBtn");
@@ -118,27 +112,13 @@ function initMap() {
   loadHistory();
   renderStepsChart();
   updateButtons();
-  updateGoalDisplay();
 }
 
 // --- Fonctions UI ---
 function updateStats() {
   stepEl.textContent = Math.round(state.steps);
-  stepGoalEl.textContent = `/ ${DAILY_GOAL_STEPS} 🎯`;
-  const progress = Math.min(100, (state.steps / DAILY_GOAL_STEPS) * 100);
-  stepEl.style.color = progress >= 100 ? "#62d36f" : "";
   distanceEl.innerHTML = `${state.totalDistanceKm.toFixed(2)} <small>km</small>`;
   caloriesEl.innerHTML = `${Math.round(state.calories)} <small>kcal</small>`;
-  updateGoalDisplay();
-}
-
-function updateGoalDisplay() {
-  const goal = state.goalDistance || 5;
-  const current = state.totalDistanceKm || 0;
-  const percent = Math.min(100, (current / goal) * 100);
-  goalProgress.textContent = `${Math.round(percent)}%`;
-  goalLabel.textContent = `${current.toFixed(2)} / ${goal} km`;
-  goalProgress.style.color = percent >= 100 ? "#62d36f" : "#16c7b7";
 }
 
 function updateDuration() {
@@ -154,6 +134,8 @@ function updateButtons() {
   stopBtn.disabled = !state.tracking;
   saveBtn.disabled = state.tracking || state.path.length < 2;
   resetBtn.disabled = false;
+  // Le bouton partage est toujours actif si des données existent
+  shareBtn.disabled = state.steps === 0 && state.totalDistanceKm === 0;
 }
 
 // --- Dessin du tracé ---
@@ -303,8 +285,6 @@ function startTracking() {
   const weight = prefs.weight || 70;
   displayWeight.textContent = weight;
 
-  state.goalDistance = parseFloat(goalDistanceSelect.value) || 5;
-  
   resetSessionInternal();
   state.startTime = Date.now();
   state.tracking = true;
@@ -333,10 +313,7 @@ function startTracking() {
           state.path.push(loc);
           drawPath();
           updateStats();
-          
-          if (state.totalDistanceKm >= state.goalDistance) {
-            toast(`🎉 Objectif de ${state.goalDistance} km atteint !`);
-          }
+          updateButtons(); // Met à jour le bouton partage
         }
       } else {
         state.path.push(loc);
@@ -381,6 +358,7 @@ function stopTracking() {
   }
 }
 
+// --- SAUVEGARDE ---
 async function saveActivity() {
   if (state.tracking) {
     toast("Arrêtez d'abord le suivi.");
@@ -391,48 +369,113 @@ async function saveActivity() {
     return;
   }
 
+  if (!state.startTime) {
+    toast("Erreur : session non valide.");
+    return;
+  }
+
   const durationSec = (Date.now() - state.startTime) / 1000;
   if (durationSec < 5) {
     toast("Session trop courte (moins de 5s).");
     return;
   }
 
+  if (state.totalDistanceKm <= 0) {
+    toast("Distance nulle, rien à sauvegarder.");
+    return;
+  }
+
   const activity = {
     id: uid("activity"),
     date: new Date().toISOString(),
-    type: activityType.value,
+    type: activityType.value || "walk",
     steps: Math.round(state.steps),
-    distance: state.totalDistanceKm,
+    distance: parseFloat(state.totalDistanceKm.toFixed(2)),
     calories: Math.round(state.calories),
-    duration: durationSec,
-    path: state.path,
-    goal: state.goalDistance,
+    duration: Math.round(durationSec),
+    path: state.path.map(p => ({ lat: p.lat, lng: p.lng })),
   };
+
+  console.log("📝 Sauvegarde de l'activité :", activity);
 
   try {
     await putItem("activities", activity);
-    toast("Activité sauvegardée ! ✅");
+    toast("✅ Activité sauvegardée !");
     resetSessionInternal();
     updateButtons();
-    loadHistory();
-    renderStepsChart();
+    await loadHistory();
+    await renderStepsChart();
   } catch (e) {
-    toast("Erreur lors de la sauvegarde.");
-    console.error(e);
+    console.error("❌ Erreur lors de la sauvegarde :", e);
+    toast("❌ Erreur lors de la sauvegarde : " + (e.message || "inconnue"));
   }
 }
 
-// --- Partager ---
-function shareActivity() {
-  if (state.steps === 0) {
+// --- PARTAGE CORRIGÉ ---
+async function shareActivity() {
+  // Vérifier si on a des données à partager
+  if (state.steps === 0 && state.totalDistanceKm === 0) {
     toast("Aucune activité à partager.");
     return;
   }
-  const text = `🏃 J'ai marché ${Math.round(state.steps)} pas (${state.totalDistanceKm.toFixed(2)} km) ! 🔥 ${Math.round(state.calories)} kcal brûlées ! #Wistoria #Fitness`;
-  if (navigator.share) {
-    navigator.share({ title: "Mon activité Wistoria", text });
-  } else {
-    navigator.clipboard?.writeText(text).then(() => toast("Texte copié !"));
+
+  // Construire le message
+  const stepsText = state.steps > 0 ? `${Math.round(state.steps)} pas` : "0 pas";
+  const distanceText = state.totalDistanceKm.toFixed(2);
+  const caloriesText = state.calories > 0 ? `🔥 ${Math.round(state.calories)} kcal` : "";
+  
+  let text = `🏃 ${stepsText}`;
+  text += ` (${distanceText} km)`;
+  if (caloriesText) text += ` ${caloriesText}`;
+  text += ` ! #Wistoria #Fitness`;
+
+  // Ajouter la durée si disponible
+  if (state.startTime) {
+    const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+    const mins = Math.floor(elapsed / 60);
+    const secs = elapsed % 60;
+    if (mins > 0 || secs > 0) {
+      text += ` ⏱️ ${mins}min${secs > 0 ? ` ${secs}s` : ''}`;
+    }
+  }
+
+  console.log("📤 Message de partage :", text);
+
+  try {
+    if (navigator.share) {
+      // API Web Share (mobile/desktop compatible)
+      await navigator.share({
+        title: "Mon activité Wistoria",
+        text: text,
+      });
+      toast("✅ Partagé !");
+    } else if (navigator.clipboard) {
+      // Fallback : copier dans le presse-papiers
+      await navigator.clipboard.writeText(text);
+      toast("📋 Texte copié dans le presse-papiers !");
+    } else {
+      // Dernier fallback : ouvrir une fenêtre avec le texte
+      const win = window.open('', '_blank', 'width=400,height=200');
+      if (win) {
+        win.document.write(`
+          <html><body style="font-family:sans-serif;padding:20px;text-align:center;">
+            <h3>📤 Partager</h3>
+            <p style="background:#f0f0f0;padding:15px;border-radius:8px;word-break:break-all;">${text}</p>
+            <p>Sélectionnez et copiez le texte ci-dessus.</p>
+            <button onclick="window.close()" style="padding:8px 20px;border:none;background:#16c7b7;color:white;border-radius:4px;cursor:pointer;">Fermer</button>
+          </body></html>
+        `);
+        toast("📤 Fenêtre de partage ouverte.");
+      } else {
+        toast("❌ Impossible de partager.");
+      }
+    }
+  } catch (error) {
+    console.error("❌ Erreur de partage :", error);
+    // Si l'utilisateur annule, ne pas afficher d'erreur
+    if (error.name !== 'AbortError') {
+      toast("❌ Erreur lors du partage.");
+    }
   }
 }
 
@@ -446,14 +489,14 @@ async function renderStepsChart() {
   }
   try {
     const activities = await getAll("activities");
+    if (!activities || activities.length === 0) {
+      stepsChartCanvas.parentNode.innerHTML = `<div class="empty-state">Pas encore de données.</div>`;
+      return;
+    }
     const last7 = activities.slice(-7);
     const labels = last7.map(a => new Date(a.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }));
     const data = last7.map(a => a.steps || 0);
     if (stepsChartInstance) stepsChartInstance.destroy();
-    if (last7.length === 0) {
-      stepsChartCanvas.parentNode.innerHTML = `<div class="empty-state">Pas encore de données.</div>`;
-      return;
-    }
     stepsChartInstance = new Chart(stepsChartCanvas, {
       type: "bar",
       data: {
@@ -492,19 +535,18 @@ async function loadHistory() {
       const time = new Date(act.date).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
       const dur = Math.floor(act.duration / 60) + "min";
       const typeEmoji = act.type === "run" ? "🏃" : act.type === "bike" ? "🚴" : "🚶";
-      const goal = act.goal ? `🎯 ${act.goal} km` : '';
       return `
         <div class="history-item">
           <div class="info">
             <strong>${typeEmoji} ${date} à ${time}</strong>
-            <span>${act.steps} pas · ${act.distance.toFixed(2)} km · ${act.calories} kcal · ${dur} ${goal}</span>
+            <span>${act.steps} pas · ${act.distance.toFixed(2)} km · ${act.calories} kcal · ${dur}</span>
           </div>
           <span class="badge">${act.type || "marche"}</span>
         </div>
       `;
     }).join("");
   } catch (e) {
-    console.error(e);
+    console.error("Erreur historique :", e);
     historyList.innerHTML = `<div class="empty-state">Erreur de chargement.</div>`;
   }
 }
@@ -527,7 +569,7 @@ function retryMap() {
   }
 }
 
-// --- Météo ---
+// --- Météo (version avec emojis pour le vent) ---
 async function fetchWeather() {
   weatherModal.style.display = "grid";
   weatherLocation.textContent = "Recherche de votre position...";
@@ -540,7 +582,6 @@ async function fetchWeather() {
 
   let lat = 48.8566;
   let lon = 2.3522;
-  let locationName = "Paris (défaut)";
 
   if (navigator.geolocation) {
     try {
@@ -552,28 +593,69 @@ async function fetchWeather() {
       });
       lat = pos.coords.latitude;
       lon = pos.coords.longitude;
-      locationName = `Lat ${lat.toFixed(4)}, Lon ${lon.toFixed(4)}`;
     } catch (e) {
       console.warn("Géolocalisation échouée, fallback sur Paris.", e);
       toast("Position non trouvée, affichage de la météo Paris.");
     }
   }
 
-  weatherLocation.textContent = `📍 ${locationName}`;
-
   try {
-    const url = `https://wttr.in/${lat},${lon}?format=j1&lang=fr&units=m`;
+    const url = `https://wttr.in/${lat},${lon}?format=j1&lang=fr`;
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
 
     const current = data.current_condition[0];
-    const humidity = current.humidity || "--";
+    const nearest = data.nearest_area?.[0] || {};
+    const areaName = nearest.areaName?.[0]?.value || `Lat ${lat.toFixed(2)}, Lon ${lon.toFixed(2)}`;
+    
     const temp = current.temp_C || "--";
     const desc = current.weatherDesc?.[0]?.value || "Inconnu";
-    const wind = current.windSpeed || "--";
-    const uv = current.uvIndex || "--";
+    const humidity = current.humidity || "--";
+    
+    // --- Gestion du vent avec emoji ---
+    let windSpeed = current.windSpeed || "--";
+    let windDirText = current.winddir16Point || "";
+    
+    // Fonction pour obtenir l'emoji du vent en fonction de la vitesse
+    function getWindEmoji(speed) {
+      const s = parseFloat(speed);
+      if (isNaN(s) || s < 0) return "🍃";
+      if (s < 5) return "🍃";
+      if (s < 15) return "🌬️";
+      if (s < 30) return "💨";
+      if (s < 50) return "🌪️";
+      return "🌀";
+    }
+    
+    if (windSpeed === "N/A" || windSpeed === "" || windSpeed === "--") {
+      windSpeed = "🍃 Calme";
+    } else {
+      const emoji = getWindEmoji(windSpeed);
+      if (windDirText && windDirText !== "N/A") {
+        windSpeed = `${emoji} ${windSpeed} km/h (${windDirText})`;
+      } else {
+        windSpeed = `${emoji} ${windSpeed} km/h`;
+      }
+    }
 
+    // --- Gestion de l'UV ---
+    let uv = current.uvIndex || "--";
+    if (uv === "0" || uv === 0 || uv === "0.0") {
+      uv = "🌙 N/A (nuit)";
+    } else if (uv === "N/A" || uv === "--" || uv === "") {
+      uv = "N/A";
+    } else {
+      // Ajouter un emoji UV
+      const uvNum = parseFloat(uv);
+      if (uvNum <= 2) uv = `🟢 ${uv} (faible)`;
+      else if (uvNum <= 5) uv = `🟡 ${uv} (modéré)`;
+      else if (uvNum <= 7) uv = `🟠 ${uv} (élevé)`;
+      else if (uvNum <= 10) uv = `🔴 ${uv} (très élevé)`;
+      else uv = `🟣 ${uv} (extrême)`;
+    }
+
+    // --- Emoji météo ---
     let emoji = "🌤️";
     const lowerDesc = desc.toLowerCase();
     if (lowerDesc.includes("pluie") || lowerDesc.includes("averse")) emoji = "🌧️";
@@ -583,17 +665,16 @@ async function fetchWeather() {
     else if (lowerDesc.includes("soleil") || lowerDesc.includes("ensoleillé") || lowerDesc.includes("clair")) emoji = "☀️";
     else if (lowerDesc.includes("nuage")) emoji = "☁️";
 
+    // Mise à jour de l'interface
+    weatherLocation.textContent = ` ${areaName}`;
     weatherEmoji.textContent = emoji;
     weatherTemp.textContent = `${temp}°C`;
     weatherDesc.textContent = desc;
     weatherHumidity.textContent = `${humidity}%`;
-    weatherWind.textContent = `${wind} km/h`;
+    weatherWind.textContent = windSpeed;
     weatherUV.textContent = uv;
 
-    const area = data.nearest_area?.[0]?.areaName?.[0]?.value;
-    if (area) {
-      weatherLocation.textContent = `📍 ${area}`;
-    }
+    toast("Météo chargée !");
 
   } catch (error) {
     console.error("Erreur météo :", error);
@@ -634,11 +715,6 @@ export function initActivityPage() {
   centerMapBtn.addEventListener("click", centerOnUser);
   fitPathBtn.addEventListener("click", fitPath);
 
-  goalDistanceSelect.addEventListener("change", () => {
-    state.goalDistance = parseFloat(goalDistanceSelect.value) || 5;
-    updateGoalDisplay();
-  });
-
   try {
     loadHistory();
   } catch (e) { console.warn(e); }
@@ -657,7 +733,6 @@ export function initActivityPage() {
   }
 
   updateButtons();
-  updateGoalDisplay();
 
   window.addEventListener("beforeunload", () => {
     if (state.watchId) navigator.geolocation.clearWatch(state.watchId);

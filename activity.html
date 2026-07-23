@@ -28,15 +28,7 @@
           <button class="btn icon-btn mobile-menu" data-menu aria-label="Ouvrir le menu">☰</button>
           <div>
             <h1>Activité</h1>
-            <p>Suis tes déplacements, calories, objectifs et visualise ton parcours.</p>
-          </div>
-          <div class="toolbar">
-            <button class="btn primary" id="startActivityBtn">▶ Démarrer</button>
-            <button class="btn warning" id="stopActivityBtn" disabled>⏹ Arrêter</button>
-            <button class="btn" id="saveActivityBtn" disabled>💾 Sauvegarder</button>
-            <button class="btn" id="shareBtn">📤 Partager</button>
-            <button class="btn" id="resetActivityBtn">🔄 Réinitialiser</button>
-            <button class="btn" id="weatherBtn">🌤️ Météo</button>
+            <p>Suis tes déplacements, calories et visualise ton parcours.</p>
           </div>
         </header>
 
@@ -45,7 +37,6 @@
           <div class="stat-card">
             <span class="stat-label">Pas</span>
             <strong id="stepCount">0</strong>
-            <span class="stat-goal" id="stepGoal">/ 10000 🎯</span>
           </div>
           <div class="stat-card">
             <span class="stat-label">Distance</span>
@@ -59,13 +50,9 @@
             <span class="stat-label">Durée</span>
             <strong id="durationCount">00:00</strong>
           </div>
-          <div class="stat-card">
-            <span class="stat-label">Objectif distance</span>
-            <strong id="goalProgress">0%</strong>
-            <span class="stat-goal" id="goalLabel">0 / 5 km</span>
-          </div>
         </section>
 
+        <!-- Contrôles -->
         <div class="activity-controls">
           <div class="field">
             <label for="activityType">Type d'activité</label>
@@ -75,23 +62,22 @@
               <option value="bike">Vélo</option>
             </select>
           </div>
-          <div class="field" style="min-width:120px;">
-            <label for="goalDistance">Objectif (km)</label>
-            <select id="goalDistance">
-              <option value="1">1 km</option>
-              <option value="2">2 km</option>
-              <option value="5" selected>5 km</option>
-              <option value="10">10 km</option>
-              <option value="21">Semi</option>
-              <option value="42">Marathon</option>
-            </select>
-          </div>
           <div style="flex:1; text-align: right; color: var(--muted); font-size: 0.85rem;">
-            ⚡ Estimation basée sur votre poids (<span id="displayWeight">70</span> kg)
+            ⚡ Poids : <span id="displayWeight">70</span> kg
           </div>
         </div>
 
-        <!-- Carte avec contrôles -->
+        <!-- Boutons d'action (en bas de la carte) -->
+        <div class="action-bar">
+          <button class="btn primary" id="startActivityBtn">▶ Démarrer</button>
+          <button class="btn warning" id="stopActivityBtn" disabled>⏹ Arrêter</button>
+          <button class="btn" id="saveActivityBtn" disabled>💾 Sauvegarder</button>
+          <button class="btn" id="shareBtn">📤 Partager</button>
+          <button class="btn" id="resetActivityBtn">🔄 Réinitialiser</button>
+          <button class="btn" id="weatherBtn">🌤️ Météo</button>
+        </div>
+
+        <!-- Carte -->
         <section class="activity-map-wrap">
           <div id="map"></div>
           <div class="map-controls">
