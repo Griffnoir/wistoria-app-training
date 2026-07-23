@@ -20,11 +20,11 @@ import { renderDashboardCharts, renderMetrics, renderStatisticsPage } from "./st
 import { initSessionPage } from "./timer.js";
 import { generateSmartProgram, initWorkoutPage } from "./workout.js";
 
-// Configuration de la clé API Google Maps
-const GOOGLE_MAPS_API_KEY = import.meta.env?.VITE_GOOGLE_MAPS_API_KEY || "";
+import { CONFIG } from "./config.js";
+const GOOGLE_MAPS_API_KEY = CONFIG.GOOGLE_MAPS_API_KEY;
 window.GOOGLE_MAPS_API_KEY = GOOGLE_MAPS_API_KEY;
 
-let currentPage = document.body.dataset.page;
+let currentPage = document.body.dataset.page || "home";
 let loaderTimer;
 let deferredInstallPrompt = null;
 
@@ -37,7 +37,7 @@ const navItems = [
   ["calendar.html", "C", "Calendrier", "calendar"],
   ["statistics.html", "S", "Statistiques", "statistics"],
   ["settings.html", "P", "Parametres", "settings"],
-  ["activity.html", "A", "Activité", "activity"]
+  ["activity.html", "A", "Activit�", "activity"]
 ];
 
 const pageExtras = ["exerciseDialog", "planDialog"];
@@ -92,6 +92,7 @@ function animateMain() {
 function renderNavigation() {
   const sidebar = document.querySelector("[data-sidebar]");
   const bottom = document.querySelector("[data-bottom-nav]");
+  
   const links = navItems.map(([href, icon, label, key]) => `
     <a class="nav-link ${currentPage === key ? "active" : ""}" href="${href}" data-nav="${key}">
       <span class="nav-icon">${icon}</span>
@@ -129,7 +130,6 @@ async function navigateTo(href, options = {}) {
     return;
   }
 
-  // Éviter de naviguer vers la même page
   if (url.pathname === location.pathname && !options.force) {
     return;
   }
@@ -264,7 +264,6 @@ function initSettingsPage() {
     field.value = String(value);
   });
 
-  // Formulaire des paramètres
   document.getElementById("settingsForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     const next = savePrefs({
