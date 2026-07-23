@@ -101,7 +101,6 @@
               <button type="button" class="btn" id="testVoiceBtn">Tester la voix</button>
             </div>
           </form>
-
           <div class="panel">
             <h2>Sauvegarde</h2>
             <p>Les préférences restent dans LocalStorage. Les programmes, historiques et plans sont stockés dans IndexedDB.</p>
@@ -119,6 +118,16 @@
               <button class="btn primary" id="installAppBtn" type="button">Télécharger l'application</button>
             </div>
             <div class="empty-state" id="installAppState">Le navigateur proposera l'installation quand l'application sera disponible.</div>
+          </div>
+          <!-- settings.html - dans la section "Téléchargement" ou à la fin -->
+          <div class="panel">
+            <h2>Mise à jour</h2>
+            <p>Vérifie si une nouvelle version de Wistoria est disponible et applique les mises à jour.</p>
+            <div class="toolbar">
+              <button class="btn primary" id="checkUpdateBtn">🔍 Vérifier les mises à jour</button>
+              <button class="btn" id="forceUpdateBtn" style="display:none;">🔄 Appliquer la mise à jour</button>
+            </div>
+            <div id="updateStatus" class="empty-state">Aucune mise à jour en attente.</div>
           </div>
           <div class="panel">
             <h2>A propos / Manuel</h2>

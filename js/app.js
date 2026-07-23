@@ -196,8 +196,11 @@ function attachGlobalActions() {
       await navigateTo("session.html");
     }
 
+    // app.js (extrait modifié dans la partie attachGlobalActions)
     if (event.target.matches("[data-generate-session]")) {
-      const program = await generateProgramFromPrompt();
+      // Utiliser la nouvelle fonction intelligente
+      const { generateSmartProgram } = await import("./workout.js");
+      const program = await generateSmartProgram();
       setActiveProgram(program.id);
       await navigateTo("workout.html");
     }
@@ -234,6 +237,8 @@ async function exportJson() {
   toast("Export JSON genere.");
 }
 
+// app.js - dans initSettingsPage()
+
 function initSettingsPage() {
   const prefs = getPrefs();
   updateInstallButton();
@@ -243,6 +248,7 @@ function initSettingsPage() {
     field.value = String(value);
   });
 
+  
   document.getElementById("settingsForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     const next = savePrefs({
@@ -301,6 +307,73 @@ function updateInstallButton() {
   }
 }
 
+  // ... (le reste du code existant)
+
+  // Gestion du bouton de mise à jour
+  const checkBtn = document.getElementById("checkUpdateBtn");
+  const forceBtn = document.getElementById("forceUpdateBtn");
+  const statusEl = document.getElementById("updateStatus");
+
+  if (checkBtn) {
+    checkBtn.addEventListener("click", async () => {
+      if (!("serviceWorker" in navigator)) {
+        statusEl.textContent = "❌ Service Worker non supporté.";
+        return;
+      }
+      const registration = await navigator.serviceWorker.ready;
+      try {
+        await registration.update();
+        statusEl.textContent = "✅ Vérification effectuée. Aucune mise à jour trouvée.";
+        // Vérifier s'il y a un nouveau worker en attente
+        if (registration.waiting) {
+          statusEl.textContent = "🔄 Une mise à jour est disponible. Cliquez sur 'Appliquer'.";
+          forceBtn.style.display = "inline-flex";
+          // On peut aussi proposer de recharger automatiquement
+        } else {
+          forceBtn.style.display = "none";
+          // Vérifier après un délai si un worker est en attente
+          setTimeout(() => {
+            if (registration.waiting) {
+              statusEl.textContent = "🔄 Une mise à jour est disponible. Cliquez sur 'Appliquer'.";
+              forceBtn.style.display = "inline-flex";
+            }
+          }, 1000);
+        }
+      } catch (err) {
+        statusEl.textContent = "❌ Erreur lors de la vérification : " + err.message;
+      }
+    });
+  }
+
+  if (forceBtn) {
+    forceBtn.addEventListener("click", () => {
+      if (!("serviceWorker" in navigator)) return;
+      navigator.serviceWorker.ready.then((registration) => {
+        const waiting = registration.waiting;
+        if (waiting) {
+          // Envoyer un message au service worker pour qu'il prenne le contrôle
+          waiting.postMessage({ type: "SKIP_WAITING" });
+          // Recharger la page après un court délai
+          setTimeout(() => {
+            window.location.reload();
+          }, 500);
+        } else {
+          statusEl.textContent = "⚠️ Aucune mise à jour en attente.";
+          forceBtn.style.display = "none";
+        }
+      });
+    });
+  }
+
+  // Écouter les changements de service worker
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      statusEl.textContent = "✅ Mise à jour appliquée. Rechargement...";
+      setTimeout(() => window.location.reload(), 500);
+    });
+  }
+
+  
 async function installApp() {
   if (isAppInstalled()) {
     toast("Wistoria est deja installee.");

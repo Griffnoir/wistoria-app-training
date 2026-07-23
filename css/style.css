@@ -613,3 +613,16 @@ dialog::backdrop {
   display: none !important;
 }
 
+/* style.css (ajout) */
+.drop-zone {
+  height: 3px;
+  background: var(--teal);
+  margin: 4px 0;
+  border-radius: 2px;
+  transition: height 0.2s ease;
+}
+
+.exercise-card.dragging {
+  opacity: 0.4;
+  border: 2px dashed var(--teal);
+}
