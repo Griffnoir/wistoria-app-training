@@ -485,8 +485,14 @@ async function runCurrentPage() {
   if (currentPage === "settings") initSettingsPage();
   observeCards();
   if (currentPage === "activity") {
-    const { initActivityPage } = await import("./activity.js");
-    initActivityPage();
+    try {
+      const { initActivityPage } = await import("./activity.js");
+      await initActivityPage();
+    } catch (error) {
+      console.error("Erreur dans la page activité :", error);
+      toast("Erreur lors du chargement de la page activité.");
+      hideLoader(180);
+    }
   }
 }
 
