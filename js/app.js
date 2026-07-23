@@ -1,4 +1,4 @@
-// app.js
+// app.js - Version corrigée
 
 import { observeCards } from "./animation.js";
 import { initCalendarPage, renderTodayPlans } from "./calendar.js";
@@ -18,13 +18,10 @@ import {
 } from "./storage.js";
 import { renderDashboardCharts, renderMetrics, renderStatisticsPage } from "./statistics.js";
 import { initSessionPage } from "./timer.js";
-import { generateSmartProgram, initWorkoutPage } from "./workout.js";
+import { generateProgramFromPrompt, initWorkoutPage } from "./workout.js";
 
-// Configuration de la clé API Google Maps
-const GOOGLE_MAPS_API_KEY = import.meta.env?.VITE_GOOGLE_MAPS_API_KEY || "";
-window.GOOGLE_MAPS_API_KEY = GOOGLE_MAPS_API_KEY;
-
-let currentPage = document.body.dataset.page;
+// --- CORRECTION 1 : Initialisation de currentPage avec une valeur par défaut ---
+let currentPage = document.body.dataset.page || "home";
 let loaderTimer;
 let deferredInstallPrompt = null;
 
@@ -129,13 +126,13 @@ async function navigateTo(href, options = {}) {
     return;
   }
 
-  // Éviter de naviguer vers la même page
+  // Éviter les navigations inutiles
   if (url.pathname === location.pathname && !options.force) {
     return;
   }
 
   showLoader("Transition fluide vers la prochaine section.");
-  
+
   try {
     const response = await fetch(url.href, { cache: "no-cache" });
     if (!response.ok) {
@@ -161,7 +158,7 @@ async function navigateTo(href, options = {}) {
         if (node) document.body.append(node);
       });
 
-      currentPage = nextDocument.body.dataset.page;
+      currentPage = nextDocument.body.dataset.page || "home";
       document.body.dataset.page = currentPage;
       document.title = nextDocument.title;
       document.body.classList.remove("nav-open");
@@ -188,16 +185,23 @@ async function navigateTo(href, options = {}) {
   }
 }
 
+function toggleMobileMenu() {
+  document.body.classList.toggle("nav-open");
+}
+
 function attachGlobalActions() {
-  document.addEventListener("click", async (event) => {
-    // Menu mobile
-    const menu = event.target.closest("[data-menu]");
-    if (menu) {
-      document.body.classList.toggle("nav-open");
+  // Menu mobile
+  document.addEventListener("click", (event) => {
+    const menuBtn = event.target.closest("[data-menu]");
+    if (menuBtn) {
+      event.preventDefault();
+      toggleMobileMenu();
       return;
     }
+  });
 
-    // Liens de navigation
+  // Liens de navigation
+  document.addEventListener("click", async (event) => {
     const anchor = event.target.closest("a[href]");
     if (anchor && !anchor.target && !anchor.hasAttribute("download")) {
       const url = new URL(anchor.getAttribute("href"), location.href);
@@ -207,26 +211,29 @@ function attachGlobalActions() {
         return;
       }
     }
+  });
 
-    // Actions rapides
-    if (event.target.matches("[data-quick-session]")) {
+  // Actions rapides
+  document.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (target.matches("[data-quick-session]")) {
       const program = await createProgramFromGoal("Mobilite");
       setActiveProgram(program.id);
       toast("Seance rapide creee.");
       await navigateTo("session.html");
     }
 
-    if (event.target.matches("[data-generate-session]")) {
-      const program = await generateSmartProgram();
+    if (target.matches("[data-generate-session]")) {
+      const program = await generateProgramFromPrompt();
       setActiveProgram(program.id);
       await navigateTo("workout.html");
     }
 
-    if (event.target.matches("[data-export]")) {
+    if (target.matches("[data-export]")) {
       await exportJson();
     }
 
-    if (event.target.matches("[data-fullscreen]")) {
+    if (target.matches("[data-fullscreen]")) {
       if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
       else document.exitFullscreen?.();
     }
@@ -257,14 +264,13 @@ async function exportJson() {
 function initSettingsPage() {
   const prefs = getPrefs();
   updateInstallButton();
-  
+
   Object.entries(prefs).forEach(([key, value]) => {
     const field = document.getElementById(key);
     if (!field) return;
     field.value = String(value);
   });
 
-  // Formulaire des paramètres
   document.getElementById("settingsForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     const next = savePrefs({
@@ -282,75 +288,99 @@ function initSettingsPage() {
       weight: Number(document.getElementById("weight").value || 70)
     });
     document.documentElement.dataset.theme = next.theme;
-    toast("Parametres enregistres.");
+    toast("Paramètres enregistrés.");
   });
 
-  document.getElementById("testVoiceBtn")?.addEventListener("click", () => speak("Commencez l'etirement. 10 secondes restantes."));
+  document.getElementById("testVoiceBtn")?.addEventListener("click", () => speak("Commencez l'étirement. 10 secondes restantes."));
   document.getElementById("installAppBtn")?.addEventListener("click", installApp);
   document.getElementById("importFile")?.addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    const data = JSON.parse(await file.text());
-    await importData(data);
-    applyTheme();
-    toast("Import termine.");
+    try {
+      const data = JSON.parse(await file.text());
+      await importData(data);
+      applyTheme();
+      toast("Import terminé.");
+    } catch (e) {
+      toast("Erreur lors de l'import : " + e.message);
+    }
   });
 
-  // Gestion du bouton de mise à jour
+  // Gestion de la mise à jour
   const checkBtn = document.getElementById("checkUpdateBtn");
   const forceBtn = document.getElementById("forceUpdateBtn");
   const statusEl = document.getElementById("updateStatus");
 
-  if (checkBtn) {
-    checkBtn.addEventListener("click", async () => {
+  if (!checkBtn || !statusEl) return;
+
+  let isChecking = false;
+
+  checkBtn.addEventListener("click", async () => {
+    if (isChecking) return;
+    isChecking = true;
+    checkBtn.disabled = true;
+    statusEl.textContent = "⏳ Vérification en cours...";
+    forceBtn.style.display = "none";
+
+    try {
       if (!("serviceWorker" in navigator)) {
-        statusEl.textContent = "❌ Service Worker non supporté.";
+        statusEl.textContent = "❌ Service Worker non supporté par ce navigateur.";
         return;
       }
-      const registration = await navigator.serviceWorker.ready;
+
+      let registration;
       try {
-        await registration.update();
-        statusEl.textContent = "✅ Vérification effectuée. Aucune mise à jour trouvée.";
-        if (registration.waiting) {
-          statusEl.textContent = "🔄 Une mise à jour est disponible. Cliquez sur 'Appliquer'.";
-          forceBtn.style.display = "inline-flex";
-        } else {
-          forceBtn.style.display = "none";
-          setTimeout(() => {
-            if (registration.waiting) {
-              statusEl.textContent = "🔄 Une mise à jour est disponible. Cliquez sur 'Appliquer'.";
-              forceBtn.style.display = "inline-flex";
-            }
-          }, 1000);
-        }
-      } catch (err) {
-        statusEl.textContent = "❌ Erreur lors de la vérification : " + err.message;
+        registration = await navigator.serviceWorker.ready;
+      } catch (e) {
+        statusEl.textContent = "❌ Service Worker non enregistré. Veuillez recharger la page.";
+        return;
+      }
+
+      await registration.update();
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      const waitingWorker = registration.waiting;
+      if (waitingWorker) {
+        statusEl.textContent = "🔄 Une nouvelle version est disponible ! Cliquez sur 'Appliquer' pour mettre à jour.";
+        forceBtn.style.display = "inline-flex";
+      } else {
+        statusEl.textContent = "✅ Aucune mise à jour disponible. Vous êtes à jour.";
+        forceBtn.style.display = "none";
+      }
+    } catch (err) {
+      console.error("Erreur de mise à jour :", err);
+      statusEl.textContent = "❌ Erreur lors de la vérification : " + err.message;
+    } finally {
+      isChecking = false;
+      checkBtn.disabled = false;
+    }
+  });
+
+  forceBtn.addEventListener("click", () => {
+    if (!("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.ready.then((registration) => {
+      const waiting = registration.waiting;
+      if (waiting) {
+        waiting.postMessage({ type: "SKIP_WAITING" });
+        statusEl.textContent = "⏳ Application de la mise à jour...";
+        forceBtn.style.display = "none";
+        setTimeout(() => {
+          window.location.reload();
+        }, 600);
+      } else {
+        statusEl.textContent = "⚠️ Aucune mise à jour en attente.";
+        forceBtn.style.display = "none";
       }
     });
-  }
-
-  if (forceBtn) {
-    forceBtn.addEventListener("click", () => {
-      if (!("serviceWorker" in navigator)) return;
-      navigator.serviceWorker.ready.then((registration) => {
-        const waiting = registration.waiting;
-        if (waiting) {
-          waiting.postMessage({ type: "SKIP_WAITING" });
-          setTimeout(() => {
-            window.location.reload();
-          }, 500);
-        } else {
-          statusEl.textContent = "⚠️ Aucune mise à jour en attente.";
-          forceBtn.style.display = "none";
-        }
-      });
-    });
-  }
+  });
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("controllerchange", () => {
-      statusEl.textContent = "✅ Mise à jour appliquée. Rechargement...";
-      setTimeout(() => window.location.reload(), 500);
+      statusEl.textContent = "✅ Mise à jour appliquée avec succès !";
+      setTimeout(() => {
+        statusEl.textContent = "✅ Mise à jour appliquée. Rechargement...";
+        window.location.reload();
+      }, 500);
     });
   }
 }
@@ -463,7 +493,19 @@ async function runCurrentPage() {
 async function registerServiceWorker() {
   if ("serviceWorker" in navigator) {
     try {
-      await navigator.serviceWorker.register("sw.js");
+      const registration = await navigator.serviceWorker.register("sw.js");
+      
+      // Détection de mise à jour automatique
+      registration.addEventListener("updatefound", () => {
+        const newWorker = registration.installing;
+        if (newWorker) {
+          newWorker.addEventListener("statechange", () => {
+            if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+              toast("Une nouvelle version de Wistoria est disponible. Allez dans Paramètres pour l'appliquer.");
+            }
+          });
+        }
+      });
     } catch (error) {
       console.warn("Service worker registration failed", error);
     }

@@ -5,13 +5,7 @@ import { toast } from "./notifications.js";
 
 // --- Constantes ---
 const MET = { walk: 3.5, run: 8.0, bike: 5.5 };
-const STEP_LENGTH_M = 0.78;
-
-// Récupérer la clé API depuis l'environnement ou utiliser une variable globale
-// En développement, vous pouvez définir window.GOOGLE_MAPS_API_KEY
-const GOOGLE_MAPS_API_KEY = window.GOOGLE_MAPS_API_KEY || 
-  (import.meta.env && import.meta.env.VITE_GOOGLE_MAPS_API_KEY) || 
-  ""; // Ne mettez jamais de clé en dur ici !
+const STEP_LENGTH_M = 0.78; // Longueur moyenne d'un pas en mètres
 
 // --- État ---
 let state = {
@@ -43,69 +37,40 @@ const refreshHistoryBtn = document.getElementById("refreshHistoryBtn");
 
 let map = null;
 let polyline = null;
-let mapLoadTimeout = null;
+let mapInitAttempted = false;
 
-// --- Fonction d'initialisation de la carte (callback global) ---
-function initMap() {
+// --- Initialisation de la carte (callback global) ---
+window.initMap = function() {
   if (typeof google === "undefined" || !google.maps) {
-    console.warn("Google Maps non encore chargé.");
+    console.warn("Google Maps non chargé.");
     return;
   }
-  if (map) {
-    console.log("Map déjà initialisée.");
-    return;
-  }
-
-  if (mapPlaceholder) mapPlaceholder.style.display = "none";
-
+  mapPlaceholder.style.display = "none";
   const defaultPos = { lat: 48.8566, lng: 2.3522 };
-  try {
-    map = new google.maps.Map(document.getElementById("map"), {
-      center: defaultPos,
-      zoom: 15,
-      disableDefaultUI: true,
-      zoomControl: true,
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: true,
-    });
-
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          map.setCenter(loc);
-        },
-        () => {},
-        { enableHighAccuracy: true, timeout: 5000 }
-      );
-    }
-
-    loadHistory();
-    updateButtons();
-
-    clearTimeout(mapLoadTimeout);
-    mapLoadTimeout = null;
-  } catch (e) {
-    console.error("Erreur lors de l'initialisation de la carte:", e);
-    toast("Erreur de chargement de la carte.");
-    if (mapPlaceholder) {
-      mapPlaceholder.style.display = "grid";
-      mapPlaceholder.innerHTML = `
-        <div>
-          <p style="font-size: 2rem; margin: 0;">🗺️</p>
-          <p>Impossible de charger la carte.</p>
-          <button class="btn primary" id="retryMapBtn">Réessayer</button>
-        </div>
-      `;
-      document.getElementById("retryMapBtn")?.addEventListener("click", retryMap);
-    }
+  map = new google.maps.Map(document.getElementById("map"), {
+    center: defaultPos,
+    zoom: 15,
+    disableDefaultUI: true,
+    zoomControl: true,
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: true,
+  });
+  // Centrer sur la position actuelle si possible
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        map.setCenter(loc);
+      },
+      () => { /* silencieux */ },
+      { enableHighAccuracy: true, timeout: 5000 }
+    );
   }
-}
+  loadHistory();
+};
 
-window.initMap = initMap;
-
-// --- Fonctions UI ---
+// --- Fonctions de mise à jour UI ---
 function updateStats() {
   stepEl.textContent = Math.round(state.steps);
   distanceEl.innerHTML = `${state.totalDistanceKm.toFixed(2)} <small>km</small>`;
@@ -140,6 +105,7 @@ function drawPath() {
     strokeWeight: 5,
   });
   polyline.setMap(map);
+  // Centrer sur le dernier point
   const last = state.path[state.path.length - 1];
   map.setCenter(last);
   map.setZoom(15);
@@ -170,7 +136,9 @@ function resetSession() {
   updateButtons();
 }
 
+// --- Calcul des calories ---
 function calculateCalories(met, weightKg, durationHours) {
+  // Formule standard : MET * poids (kg) * temps (heures)
   return met * weightKg * durationHours;
 }
 
@@ -181,44 +149,50 @@ function startTracking() {
     toast("La géolocalisation n'est pas supportée.");
     return;
   }
-  if (!map) {
-    toast("La carte n'est pas encore prête. Veuillez réessayer.");
-    return;
-  }
 
   const prefs = getPrefs();
   const weight = prefs.weight || 70;
   displayWeight.textContent = weight;
 
+  // Réinitialiser l'état
   resetSession();
   state.startTime = Date.now();
   state.tracking = true;
   updateButtons();
 
+  // Démarrer le chronomètre
   state.timerInterval = setInterval(updateDuration, 1000);
 
+  // Démarrer le watch GPS
   state.watchId = navigator.geolocation.watchPosition(
     (pos) => {
       const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       const accuracy = pos.coords.accuracy;
+      // Ignorer les positions trop imprécises (> 30m) pour éviter le bruit
       if (accuracy > 30) return;
 
       if (state.lastPosition) {
+        // Calculer la distance entre les deux points (en mètres)
         const prev = new google.maps.LatLng(state.lastPosition.lat, state.lastPosition.lng);
         const curr = new google.maps.LatLng(loc.lat, loc.lng);
         const distMeters = google.maps.geometry.spherical.computeDistanceBetween(prev, curr);
+        // Ignorer les micro-déplacements (< 1m)
         if (distMeters > 1) {
           state.totalDistanceKm += distMeters / 1000;
           state.steps += distMeters / STEP_LENGTH_M;
+          // Calcul des calories (basé sur le type d'activité)
           const type = activityType.value;
           const met = MET[type] || MET.walk;
           const hours = (Date.now() - state.startTime) / 3600000;
           state.calories = calculateCalories(met, weight, hours);
+          // Ajouter au chemin
           state.path.push(loc);
+          // Tracer
           drawPath();
           updateStats();
         }
       } else {
+        // Premier point
         state.path.push(loc);
         if (map) map.setCenter(loc);
       }
@@ -247,6 +221,7 @@ function stopTracking() {
   }
   updateButtons();
   toast("Suivi arrêté.");
+  // Si un chemin existe, on active le bouton sauvegarder
   if (state.path.length >= 2) {
     saveBtn.disabled = false;
   }
@@ -284,7 +259,7 @@ async function saveActivity() {
     toast("Activité sauvegardée ! ✅");
     resetSession();
     updateButtons();
-    loadHistory();
+    loadHistory(); // Rafraîchir l'historique
   } catch (e) {
     toast("Erreur lors de la sauvegarde.");
     console.error(e);
@@ -299,6 +274,7 @@ async function loadHistory() {
       historyList.innerHTML = `<div class="empty-state">Aucune activité enregistrée.</div>`;
       return;
     }
+    // Trier par date décroissante
     activities.sort((a, b) => new Date(b.date) - new Date(a.date));
     historyList.innerHTML = activities.slice(0, 15).map((act) => {
       const date = new Date(act.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
@@ -323,91 +299,50 @@ async function loadHistory() {
 
 // --- Réessayer le chargement de la carte ---
 function retryMap() {
-  if (map) {
-    map.setCenter({ lat: 48.8566, lng: 2.3522 });
-    toast("Carte recentrée.");
-    return;
-  }
-  
-  if (!GOOGLE_MAPS_API_KEY) {
-    toast("Clé API Google Maps manquante. Veuillez la configurer.");
-    return;
-  }
-  
-  toast("Tentative de chargement de la carte...");
   if (typeof google !== "undefined" && google.maps) {
-    initMap();
-  } else {
-    const oldScript = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
-    if (oldScript) oldScript.remove();
-    const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&callback=initMap&libraries=geometry`;
-    script.async = true;
-    script.defer = true;
-    document.head.appendChild(script);
-    clearTimeout(mapLoadTimeout);
-    mapLoadTimeout = setTimeout(() => {
-      if (!map) {
-        toast("Le chargement de la carte a échoué.");
-        if (mapPlaceholder) {
-          mapPlaceholder.style.display = "grid";
-          mapPlaceholder.innerHTML = `
-            <div>
-              <p style="font-size: 2rem; margin: 0;">🗺️</p>
-              <p>Impossible de charger la carte.</p>
-              <p style="font-size: 0.8rem; color: var(--muted);">Vérifiez votre clé API et votre connexion.</p>
-              <button class="btn primary" id="retryMapBtn">Réessayer</button>
-            </div>
-          `;
-          document.getElementById("retryMapBtn")?.addEventListener("click", retryMap);
-        }
-      }
-    }, 15000);
+    window.initMap();
+    return;
   }
+  toast("Rechargement de la carte...");
+  const script = document.createElement("script");
+  script.src = `https://maps.googleapis.com/maps/api/js?key=__VOTRE_CLE_API__&callback=initMap&libraries=geometry`;
+  document.head.appendChild(script);
 }
 
 // --- Initialisation de la page ---
 export function initActivityPage() {
+  // Afficher le poids
   const prefs = getPrefs();
   displayWeight.textContent = prefs.weight || 70;
 
+  // Événements
   startBtn.addEventListener("click", startTracking);
   stopBtn.addEventListener("click", stopTracking);
   saveBtn.addEventListener("click", saveActivity);
   retryMapBtn.addEventListener("click", retryMap);
   refreshHistoryBtn.addEventListener("click", loadHistory);
 
+  // Charger l'historique immédiatement
   loadHistory();
 
-  // Vérifier si la clé API est disponible
-  if (!GOOGLE_MAPS_API_KEY) {
-    console.warn("Clé API Google Maps non configurée. La carte ne pourra pas se charger.");
-    if (mapPlaceholder) {
-      mapPlaceholder.style.display = "grid";
-      mapPlaceholder.innerHTML = `
-        <div>
-          <p style="font-size: 2rem; margin: 0;">🗺️</p>
-          <p>Clé API manquante.</p>
-          <p style="font-size: 0.8rem; color: var(--muted);">Configurez votre clé API Google Maps.</p>
-        </div>
-      `;
-    }
-  } else if (typeof google !== "undefined" && google.maps) {
-    initMap();
+  // Si la carte est déjà chargée (ex: le script a fini avant le module)
+  if (typeof google !== "undefined" && google.maps && !map) {
+    window.initMap();
   } else {
-    if (mapPlaceholder) mapPlaceholder.style.display = "grid";
-    // Charger automatiquement la carte avec la clé
-    retryMap();
+    // Afficher le placeholder en attendant
+    mapPlaceholder.style.display = "grid";
   }
 
+  // Mettre à jour l'état des boutons au chargement
   updateButtons();
-
-  window.addEventListener("beforeunload", () => {
-    if (state.watchId) {
-      navigator.geolocation.clearWatch(state.watchId);
-    }
-    if (state.timerInterval) {
-      clearInterval(state.timerInterval);
-    }
-  });
 }
+
+// Nettoyage si la page est quittée (optionnel)
+window.addEventListener("beforeunload", () => {
+  if (state.watchId) {
+    navigator.geolocation.clearWatch(state.watchId);
+  }
+  if (state.timerInterval) {
+    clearInterval(state.timerInterval);
+  }
+});

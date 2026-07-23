@@ -46,7 +46,6 @@
             <div class="program-list" id="programList"></div>
           </aside>
 
-          <!-- workout.html, section "Créateur intelligent" -->
           <section class="panel">
             <div class="section-head">
               <div>
@@ -56,45 +55,43 @@
               <button class="btn" id="saveProgramBtn">Enregistrer</button>
             </div>
 
-            <div class="form-container" style="display:none;">
-              <form id="programForm" class="form-grid">
-                <input type="hidden" id="programId">
-                <div class="field">
-                  <label for="programName">Nom du programme</label>
-                  <input id="programName" required placeholder="Souplesse Arts Martiaux">
-                </div>
-                <div class="field">
-                  <label for="programGoal">Objectif</label>
-                  <select id="programGoal">
-                    <option>Grand écart</option>
-                    <option>High kicks</option>
-                    <option>Mobilité</option>
-                    <option>Récupération</option>
-                    <option>Combat</option>
-                    <option>Personnalisé</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="programLevel">Niveau</label>
-                  <select id="programLevel">
-                    <option>Débutant</option>
-                    <option>Intermédiaire</option>
-                    <option>Avancé</option>
-                    <option>Expert</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="programDays">Jours d'entraînement</label>
-                  <input id="programDays" placeholder="Lundi, Mercredi, Vendredi">
-                </div>
-                <div class="field full">
-                  <label for="programDescription">Description</label>
-                  <textarea id="programDescription" placeholder="Objectif technique, ressenti recherché, contexte de pratique..."></textarea>
-                </div>
-              </form>
+            <form id="programForm" class="form-grid">
+              <input type="hidden" id="programId">
+              <div class="field">
+                <label for="programName">Nom du programme</label>
+                <input id="programName" required placeholder="Souplesse Arts Martiaux">
+              </div>
+              <div class="field">
+                <label for="programGoal">Objectif</label>
+                <select id="programGoal">
+                  <option>Grand écart</option>
+                  <option>High kicks</option>
+                  <option>Mobilité</option>
+                  <option>Récupération</option>
+                  <option>Combat</option>
+                  <option>Personnalisé</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="programLevel">Niveau</label>
+                <select id="programLevel">
+                  <option>Débutant</option>
+                  <option>Intermédiaire</option>
+                  <option>Avancé</option>
+                  <option>Expert</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="programDays">Jours d'entraînement</label>
+                <input id="programDays" placeholder="Lundi, Mercredi, Vendredi">
+              </div>
+              <div class="field full">
+                <label for="programDescription">Description</label>
+                <textarea id="programDescription" placeholder="Objectif technique, ressenti recherché, contexte de pratique..."></textarea>
+              </div>
+            </form>
 
-              <div class="grid four" id="builderSummary"></div>
-            </div>
+            <div class="grid four" id="builderSummary"></div>
 
             <div class="section-head">
               <div>

@@ -72,7 +72,6 @@ self.addEventListener("fetch", (event) => {
   );
 });
 
-// sw.js - ajouter à la fin du fichier
 self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") {
     self.skipWaiting();
