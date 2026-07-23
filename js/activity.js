@@ -1,4 +1,4 @@
-// js/activity.js - Version complète (sauvegarde + partage corrigés)
+// js/activity.js - Version finale avec corrections de la carte, assistance vocale et objectif automatique
 
 import { getAll, getPrefs, putItem, uid } from "./storage.js";
 import { toast } from "./notifications.js";
@@ -6,6 +6,7 @@ import { toast } from "./notifications.js";
 // --- Constantes ---
 const MET = { walk: 3.5, run: 8.0, bike: 5.5 };
 const STEP_LENGTH_M = 0.78;
+const SPEECH_INTERVAL = 30000; // 30 secondes
 
 // --- État ---
 let state = {
@@ -18,6 +19,13 @@ let state = {
   steps: 0,
   calories: 0,
   lastPosition: null,
+  goalDistance: 5,
+  // Itinéraire
+  routePoints: [],
+  routePolyline: null,
+  routeMarkers: [],
+  isDrawingRoute: false,
+  routeDistance: 0,
 };
 
 // --- Éléments DOM ---
@@ -31,6 +39,10 @@ const saveBtn = document.getElementById("saveActivityBtn");
 const shareBtn = document.getElementById("shareBtn");
 const resetBtn = document.getElementById("resetActivityBtn");
 const weatherBtn = document.getElementById("weatherBtn");
+const startRouteBtn = document.getElementById("startRouteBtn");
+const cancelLastPointBtn = document.getElementById("cancelLastPointBtn");
+const finishRouteBtn = document.getElementById("finishRouteBtn");
+const clearRouteBtn = document.getElementById("clearRouteBtn");
 const historyList = document.getElementById("activityHistoryList");
 const activityType = document.getElementById("activityType");
 const displayWeight = document.getElementById("displayWeight");
@@ -38,12 +50,14 @@ const mapPlaceholder = document.getElementById("mapPlaceholder");
 const retryMapBtn = document.getElementById("retryMapBtn");
 const refreshHistoryBtn = document.getElementById("refreshHistoryBtn");
 const stepsChartCanvas = document.getElementById("stepsChart");
+const goalDistanceInput = document.getElementById("goalDistanceKm");
+const goalDistanceLabel = document.getElementById("goalDistanceLabel");
+const goalProgressBar = document.getElementById("goalProgressBar");
+const statusMsg = document.getElementById("statusMessage");
 
-// Contrôles carte
 const centerMapBtn = document.getElementById("centerMapBtn");
 const fitPathBtn = document.getElementById("fitPathBtn");
 
-// Éléments météo
 const weatherModal = document.getElementById("weatherModal");
 const closeWeatherBtn = document.getElementById("closeWeatherModal");
 const weatherLocation = document.getElementById("weatherLocation");
@@ -60,17 +74,81 @@ let marker = null;
 let startMarker = null;
 let endMarker = null;
 let stepsChartInstance = null;
+let speechInterval = null;
+
+// --- Filtre GPS (moyenne glissante) ---
+const gpsBuffer = [];
+const GPS_BUFFER_SIZE = 3;
+
+function applySmoothing(newLat, newLng) {
+  gpsBuffer.push({ lat: newLat, lng: newLng });
+  if (gpsBuffer.length > GPS_BUFFER_SIZE) gpsBuffer.shift();
+  const avg = gpsBuffer.reduce((acc, p) => {
+    acc.lat += p.lat;
+    acc.lng += p.lng;
+    return acc;
+  }, { lat: 0, lng: 0 });
+  return {
+    lat: avg.lat / gpsBuffer.length,
+    lng: avg.lng / gpsBuffer.length,
+  };
+}
 
 // --- Distance Haversine ---
 function distanceBetween(lat1, lng1, lat2, lng2) {
   const R = 6371000;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+  const a = Math.sin(dLat / 2) ** 2 +
             Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLng / 2) * Math.sin(dLng / 2);
+            Math.sin(dLng / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+}
+
+// --- Synthèse vocale ---
+function speak(text) {
+  if (!('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'fr-FR';
+  utterance.rate = 0.9;
+  utterance.pitch = 1;
+  utterance.volume = 1;
+  const voices = window.speechSynthesis.getVoices();
+  const frenchVoice = voices.find(v => v.lang.startsWith('fr'));
+  if (frenchVoice) utterance.voice = frenchVoice;
+  window.speechSynthesis.speak(utterance);
+}
+
+function startSpeechUpdates() {
+  if (speechInterval) clearInterval(speechInterval);
+  speak("Suivi démarré.");
+  speechInterval = setInterval(() => {
+    if (!state.tracking) {
+      clearInterval(speechInterval);
+      speechInterval = null;
+      return;
+    }
+    let message = `Distance parcourue : ${state.totalDistanceKm.toFixed(1)} kilomètres.`;
+    if (state.routePoints.length > 1 && state.routeDistance > 0) {
+      const remaining = Math.max(0, state.routeDistance - state.totalDistanceKm);
+      message += ` Il vous reste ${remaining.toFixed(1)} kilomètres à parcourir.`;
+      const progress = (state.totalDistanceKm / state.routeDistance) * 100;
+      if (progress >= 100) {
+        message += " Objectif atteint !";
+      }
+    }
+    if (state.goalDistance > 0) {
+      const goalRemaining = Math.max(0, state.goalDistance - state.totalDistanceKm);
+      if (goalRemaining > 0) {
+        message += ` Objectif personnel : ${goalRemaining.toFixed(1)} kilomètres restants.`;
+      } else {
+        message += " Objectif personnel atteint !";
+      }
+    }
+    speak(message);
+  }, SPEECH_INTERVAL);
 }
 
 // --- Icône point bleu ---
@@ -83,35 +161,219 @@ function getCurrentIcon() {
   });
 }
 
-// --- Initialisation de la carte ---
+// --- Création d'un marqueur numéroté pour l'itinéraire ---
+function createRouteMarker(index) {
+  return L.divIcon({
+    className: 'route-marker-number',
+    html: `${index + 1}`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
+}
+
+// --- Initialisation de la carte (avec logs de debug) ---
 function initMap() {
-  if (map) return;
-  if (mapPlaceholder) mapPlaceholder.style.display = "none";
+  console.log("🚀 initMap() appelée");
+  if (map) {
+    console.log("⚠️ Carte déjà initialisée");
+    return;
+  }
+  // Vérifier que le conteneur existe
+  const mapContainer = document.getElementById("map");
+  if (!mapContainer) {
+    console.error("❌ Élément #map introuvable !");
+    toast("Erreur : conteneur de carte manquant.");
+    return;
+  }
+  console.log("✅ Conteneur #map trouvé");
 
-  const defaultPos = [48.8566, 2.3522];
-  map = L.map("map").setView(defaultPos, 15);
-
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: '© OpenStreetMap',
-  }).addTo(map);
-
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const loc = [pos.coords.latitude, pos.coords.longitude];
-        map.setView(loc, 15);
-        if (marker) marker.remove();
-        marker = L.marker(loc, { icon: getCurrentIcon() }).addTo(map);
-      },
-      () => {},
-      { enableHighAccuracy: true, timeout: 5000 }
-    );
+  if (mapPlaceholder) {
+    mapPlaceholder.style.display = "none";
+    console.log("✅ Placeholder masqué");
   }
 
-  loadHistory();
-  renderStepsChart();
-  updateButtons();
+  const defaultPos = [48.8566, 2.3522];
+  try {
+    map = L.map("map").setView(defaultPos, 15);
+    console.log("✅ Carte Leaflet créée");
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap',
+    }).addTo(map);
+    console.log("✅ Tuile OSM ajoutée");
+
+    // Gestion des clics pour l'itinéraire
+    map.on('click', (e) => {
+      if (state.isDrawingRoute) {
+        addRoutePoint(e.latlng.lat, e.latlng.lng);
+      }
+    });
+
+    // Géolocalisation
+    if (navigator.geolocation) {
+      console.log("📡 Tentative de géolocalisation...");
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          console.log("✅ Position GPS obtenue", pos.coords);
+          const loc = [pos.coords.latitude, pos.coords.longitude];
+          map.setView(loc, 15);
+          if (marker) marker.remove();
+          marker = L.marker(loc, { icon: getCurrentIcon() }).addTo(map);
+        },
+        (err) => {
+          console.warn("⚠️ Géolocalisation échouée :", err.message);
+        },
+        { enableHighAccuracy: true, timeout: 5000 }
+      );
+    } else {
+      console.warn("⚠️ Geolocation non supportée");
+    }
+
+    // Charger les données
+    loadHistory();
+    renderStepsChart();
+    updateButtons();
+    updateGoalDisplay();
+    updateRouteButtons();
+
+    console.log("✅ initMap() terminée avec succès");
+  } catch (error) {
+    console.error("❌ ERREUR dans initMap() :", error);
+    toast("Erreur d'initialisation de la carte : " + error.message);
+  }
+}
+
+// --- Gestion de l'itinéraire ---
+function startRouteDrawing() {
+  if (state.tracking) {
+    toast("Arrêtez d'abord le suivi pour tracer un itinéraire.");
+    return;
+  }
+  clearRoute();
+  state.isDrawingRoute = true;
+  state.routePoints = [];
+  startRouteBtn.textContent = "✏️ Cliquez sur la carte";
+  startRouteBtn.disabled = true;
+  cancelLastPointBtn.disabled = false;
+  finishRouteBtn.disabled = false;
+  toast("Cliquez sur la carte pour ajouter des points.");
+  updateStatusMessage();
+  updateRouteButtons();
+}
+
+function addRoutePoint(lat, lng) {
+  if (!state.isDrawingRoute) return;
+  state.routePoints.push({ lat, lng });
+  const marker = L.marker([lat, lng], {
+    icon: createRouteMarker(state.routePoints.length - 1),
+  }).addTo(map);
+  state.routeMarkers.push(marker);
+  updateRouteLine();
+  calculateRouteDistance();
+  toast(`Point ${state.routePoints.length} ajouté (${state.routeDistance.toFixed(2)} km)`);
+  updateRouteButtons();
+}
+
+function cancelLastPoint() {
+  if (state.routePoints.length === 0) return;
+  const lastMarker = state.routeMarkers.pop();
+  if (lastMarker) map.removeLayer(lastMarker);
+  state.routePoints.pop();
+  updateRouteLine();
+  calculateRouteDistance();
+  if (state.routePoints.length === 0) {
+    cancelLastPointBtn.disabled = true;
+  }
+  toast(`Dernier point supprimé. Reste ${state.routePoints.length} points.`);
+  updateRouteButtons();
+}
+
+function finishRoute() {
+  if (state.routePoints.length < 2) {
+    toast("Il faut au moins 2 points pour un itinéraire.");
+    return;
+  }
+  state.isDrawingRoute = false;
+  startRouteBtn.textContent = "✏️ Tracer itinéraire";
+  startRouteBtn.disabled = false;
+  cancelLastPointBtn.disabled = true;
+  finishRouteBtn.disabled = true;
+  calculateRouteDistance();
+
+  // Définir automatiquement l'objectif de distance
+  if (state.routeDistance > 0) {
+    const currentGoal = parseFloat(goalDistanceInput?.value) || 0;
+    if (currentGoal === 0 || currentGoal === 5) {
+      const newGoal = Math.ceil(state.routeDistance / 0.5) * 0.5;
+      if (goalDistanceInput) {
+        goalDistanceInput.value = newGoal;
+        state.goalDistance = newGoal;
+        updateGoalDisplay();
+      }
+      toast(`🎯 Objectif automatique : ${newGoal.toFixed(1)} km (basé sur l'itinéraire)`);
+    } else {
+      toast(`✅ Itinéraire terminé : ${state.routeDistance.toFixed(2)} km (objectif déjà défini)`);
+    }
+  }
+  updateStatusMessage();
+  updateRouteButtons();
+}
+
+function clearRoute() {
+  state.isDrawingRoute = false;
+  state.routePoints = [];
+  state.routeDistance = 0;
+  state.routeMarkers.forEach(m => map.removeLayer(m));
+  state.routeMarkers = [];
+  if (state.routePolyline) {
+    map.removeLayer(state.routePolyline);
+    state.routePolyline = null;
+  }
+  startRouteBtn.textContent = "✏️ Tracer itinéraire";
+  startRouteBtn.disabled = false;
+  cancelLastPointBtn.disabled = true;
+  finishRouteBtn.disabled = true;
+  toast("Itinéraire effacé.");
+  updateStatusMessage();
+  updateRouteButtons();
+}
+
+function updateRouteLine() {
+  if (state.routePolyline) {
+    map.removeLayer(state.routePolyline);
+    state.routePolyline = null;
+  }
+  if (state.routePoints.length < 2) return;
+  const latlngs = state.routePoints.map(p => [p.lat, p.lng]);
+  state.routePolyline = L.polyline(latlngs, {
+    color: '#ff5722',
+    weight: 4,
+    dashArray: '8 6',
+    opacity: 0.9,
+  }).addTo(map);
+}
+
+function calculateRouteDistance() {
+  state.routeDistance = 0;
+  for (let i = 1; i < state.routePoints.length; i++) {
+    state.routeDistance += distanceBetween(
+      state.routePoints[i-1].lat, state.routePoints[i-1].lng,
+      state.routePoints[i].lat, state.routePoints[i].lng
+    ) / 1000;
+  }
+}
+
+function updateRouteButtons() {
+  if (cancelLastPointBtn) {
+    cancelLastPointBtn.disabled = state.routePoints.length === 0 || !state.isDrawingRoute;
+  }
+  if (finishRouteBtn) {
+    finishRouteBtn.disabled = state.routePoints.length < 2 || !state.isDrawingRoute;
+  }
+  if (startRouteBtn) {
+    startRouteBtn.disabled = state.tracking;
+  }
 }
 
 // --- Fonctions UI ---
@@ -119,6 +381,50 @@ function updateStats() {
   stepEl.textContent = Math.round(state.steps);
   distanceEl.innerHTML = `${state.totalDistanceKm.toFixed(2)} <small>km</small>`;
   caloriesEl.innerHTML = `${Math.round(state.calories)} <small>kcal</small>`;
+  updateGoalDisplay();
+  updateStatusMessage();
+}
+
+function updateGoalDisplay() {
+  const goal = parseFloat(goalDistanceInput?.value) || 0;
+  state.goalDistance = goal;
+  const current = state.totalDistanceKm || 0;
+
+  if (goal === 0) {
+    if (goalProgressBar) {
+      goalProgressBar.style.width = '0%';
+      goalProgressBar.style.background = '#666';
+    }
+    if (goalDistanceLabel) {
+      goalDistanceLabel.textContent = `${current.toFixed(1)} km (illimité)`;
+    }
+    return;
+  }
+
+  const percent = Math.min(100, (current / goal) * 100);
+  if (goalProgressBar) {
+    goalProgressBar.style.width = percent + '%';
+    goalProgressBar.style.background = percent >= 100 ? '#62d36f' : '#1a73e8';
+  }
+  if (goalDistanceLabel) {
+    goalDistanceLabel.textContent = `${current.toFixed(1)} / ${goal.toFixed(1)} km`;
+  }
+}
+
+function updateStatusMessage() {
+  if (!statusMsg) return;
+  if (state.tracking) {
+    let msg = '🟢 En cours...';
+    if (state.routePoints.length > 1 && state.routeDistance > 0) {
+      const progress = Math.min(100, (state.totalDistanceKm / state.routeDistance) * 100);
+      msg += ` Itinéraire : ${Math.round(progress)}%`;
+    }
+    statusMsg.innerHTML = msg;
+  } else if (state.isDrawingRoute) {
+    statusMsg.innerHTML = '✏️ Mode tracé - Cliquez sur la carte pour ajouter des points';
+  } else {
+    statusMsg.innerHTML = state.totalDistanceKm > 0 ? '⏸️ Arrêté' : '⏸️ En attente';
+  }
 }
 
 function updateDuration() {
@@ -130,15 +436,15 @@ function updateDuration() {
 }
 
 function updateButtons() {
-  startBtn.disabled = state.tracking;
-  stopBtn.disabled = !state.tracking;
-  saveBtn.disabled = state.tracking || state.path.length < 2;
-  resetBtn.disabled = false;
-  // Le bouton partage est toujours actif si des données existent
-  shareBtn.disabled = state.steps === 0 && state.totalDistanceKm === 0;
+  if (startBtn) startBtn.disabled = state.tracking;
+  if (stopBtn) stopBtn.disabled = !state.tracking;
+  if (saveBtn) saveBtn.disabled = state.tracking || state.path.length < 2;
+  if (resetBtn) resetBtn.disabled = false;
+  if (shareBtn) shareBtn.disabled = state.steps === 0 && state.totalDistanceKm === 0;
+  updateRouteButtons();
 }
 
-// --- Dessin du tracé ---
+// --- Dessin du tracé effectué ---
 function drawPath() {
   if (polyline) {
     polyline.remove();
@@ -154,7 +460,7 @@ function drawPath() {
   }
 
   if (!map || state.path.length < 2) return;
-  
+
   const latlngs = state.path.map(p => [p.lat, p.lng]);
   polyline = L.polyline(latlngs, {
     color: "#1a73e8",
@@ -219,6 +525,10 @@ export function resetSession() {
     clearInterval(state.timerInterval);
     state.timerInterval = null;
   }
+  if (speechInterval) {
+    clearInterval(speechInterval);
+    speechInterval = null;
+  }
   state.tracking = false;
   state.path = [];
   state.totalDistanceKm = 0;
@@ -250,6 +560,10 @@ export function resetSession() {
 function resetSessionInternal() {
   if (state.watchId) navigator.geolocation.clearWatch(state.watchId);
   if (state.timerInterval) clearInterval(state.timerInterval);
+  if (speechInterval) {
+    clearInterval(speechInterval);
+    speechInterval = null;
+  }
   state.tracking = false;
   state.path = [];
   state.totalDistanceKm = 0;
@@ -269,7 +583,7 @@ function calculateCalories(met, weightKg, durationHours) {
   return met * weightKg * durationHours;
 }
 
-// --- Suivi GPS ---
+// --- Suivi GPS avec filtrage ---
 function startTracking() {
   if (state.tracking) return;
   if (!navigator.geolocation) {
@@ -278,6 +592,11 @@ function startTracking() {
   }
   if (!map) {
     toast("La carte n'est pas encore prête. Veuillez réessayer.");
+    return;
+  }
+
+  if (state.isDrawingRoute) {
+    toast("Vous ne pouvez pas démarrer le suivi en mode tracé. Terminez ou effacez l'itinéraire.");
     return;
   }
 
@@ -290,30 +609,50 @@ function startTracking() {
   state.tracking = true;
   updateButtons();
 
+  // Démarrer l'assistance vocale
+  startSpeechUpdates();
+
   state.timerInterval = setInterval(updateDuration, 1000);
 
   state.watchId = navigator.geolocation.watchPosition(
     (pos) => {
-      const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       const accuracy = pos.coords.accuracy;
-      if (accuracy > 30) return;
+      if (accuracy > 20) {
+        console.warn("Précision insuffisante :", accuracy, "m");
+        return;
+      }
+
+      const raw = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      const smoothed = applySmoothing(raw.lat, raw.lng);
+      const loc = smoothed;
 
       if (state.lastPosition) {
         const distMeters = distanceBetween(
           state.lastPosition.lat, state.lastPosition.lng,
           loc.lat, loc.lng
         );
-        if (distMeters > 1) {
-          state.totalDistanceKm += distMeters / 1000;
-          state.steps += distMeters / STEP_LENGTH_M;
-          const type = activityType.value;
-          const met = MET[type] || MET.walk;
-          const hours = (Date.now() - state.startTime) / 3600000;
-          state.calories = calculateCalories(met, weight, hours);
-          state.path.push(loc);
-          drawPath();
-          updateStats();
-          updateButtons(); // Met à jour le bouton partage
+        if (distMeters < 2) return;
+        state.totalDistanceKm += distMeters / 1000;
+        state.steps += distMeters / STEP_LENGTH_M;
+        const type = activityType.value;
+        const met = MET[type] || MET.walk;
+        const hours = (Date.now() - state.startTime) / 3600000;
+        state.calories = calculateCalories(met, weight, hours);
+        state.path.push(loc);
+        drawPath();
+        updateStats();
+        updateButtons();
+
+        if (state.goalDistance > 0 && state.totalDistanceKm >= state.goalDistance) {
+          toast(`🎉 Objectif de ${state.goalDistance} km atteint !`);
+          speak("Objectif atteint ! Félicitations !");
+        }
+        if (state.routePoints.length > 1 && state.routeDistance > 0) {
+          const progress = (state.totalDistanceKm / state.routeDistance) * 100;
+          if (progress > 100) {
+            toast("🏁 Vous avez dépassé l'itinéraire !");
+            speak("Vous avez dépassé l'itinéraire.");
+          }
         }
       } else {
         state.path.push(loc);
@@ -334,7 +673,7 @@ function startTracking() {
       toast(`Erreur GPS: ${err.message}`);
       console.error(err);
     },
-    { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+    { enableHighAccuracy: true, maximumAge: 2000, timeout: 8000 }
   );
 
   toast("Suivi démarré !");
@@ -351,11 +690,16 @@ function stopTracking() {
     clearInterval(state.timerInterval);
     state.timerInterval = null;
   }
+  if (speechInterval) {
+    clearInterval(speechInterval);
+    speechInterval = null;
+  }
   updateButtons();
   toast("Suivi arrêté.");
   if (state.path.length >= 2) {
     saveBtn.disabled = false;
   }
+  updateStatusMessage();
 }
 
 // --- SAUVEGARDE ---
@@ -390,10 +734,12 @@ async function saveActivity() {
     date: new Date().toISOString(),
     type: activityType.value || "walk",
     steps: Math.round(state.steps),
-    distance: parseFloat(state.totalDistanceKm.toFixed(2)),
+    distance: parseFloat(state.totalDistanceKm.toFixed(3)),
     calories: Math.round(state.calories),
     duration: Math.round(durationSec),
     path: state.path.map(p => ({ lat: p.lat, lng: p.lng })),
+    goal: state.goalDistance > 0 ? state.goalDistance : null,
+    route: state.routePoints.length > 1 ? state.routePoints : null,
   };
 
   console.log("📝 Sauvegarde de l'activité :", activity);
@@ -411,15 +757,13 @@ async function saveActivity() {
   }
 }
 
-// --- PARTAGE CORRIGÉ ---
+// --- PARTAGE ---
 async function shareActivity() {
-  // Vérifier si on a des données à partager
   if (state.steps === 0 && state.totalDistanceKm === 0) {
     toast("Aucune activité à partager.");
     return;
   }
 
-  // Construire le message
   const stepsText = state.steps > 0 ? `${Math.round(state.steps)} pas` : "0 pas";
   const distanceText = state.totalDistanceKm.toFixed(2);
   const caloriesText = state.calories > 0 ? `🔥 ${Math.round(state.calories)} kcal` : "";
@@ -429,7 +773,6 @@ async function shareActivity() {
   if (caloriesText) text += ` ${caloriesText}`;
   text += ` ! #Wistoria #Fitness`;
 
-  // Ajouter la durée si disponible
   if (state.startTime) {
     const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
     const mins = Math.floor(elapsed / 60);
@@ -439,22 +782,23 @@ async function shareActivity() {
     }
   }
 
+  if (state.goalDistance > 0) {
+    text += ` 🎯 Objectif : ${state.goalDistance} km`;
+  }
+
   console.log("📤 Message de partage :", text);
 
   try {
     if (navigator.share) {
-      // API Web Share (mobile/desktop compatible)
       await navigator.share({
         title: "Mon activité Wistoria",
         text: text,
       });
       toast("✅ Partagé !");
     } else if (navigator.clipboard) {
-      // Fallback : copier dans le presse-papiers
       await navigator.clipboard.writeText(text);
       toast("📋 Texte copié dans le presse-papiers !");
     } else {
-      // Dernier fallback : ouvrir une fenêtre avec le texte
       const win = window.open('', '_blank', 'width=400,height=200');
       if (win) {
         win.document.write(`
@@ -472,7 +816,6 @@ async function shareActivity() {
     }
   } catch (error) {
     console.error("❌ Erreur de partage :", error);
-    // Si l'utilisateur annule, ne pas afficher d'erreur
     if (error.name !== 'AbortError') {
       toast("❌ Erreur lors du partage.");
     }
@@ -535,11 +878,12 @@ async function loadHistory() {
       const time = new Date(act.date).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
       const dur = Math.floor(act.duration / 60) + "min";
       const typeEmoji = act.type === "run" ? "🏃" : act.type === "bike" ? "🚴" : "🚶";
+      const goalText = act.goal ? `🎯 ${act.goal} km` : '♾️ Illimité';
       return `
         <div class="history-item">
           <div class="info">
             <strong>${typeEmoji} ${date} à ${time}</strong>
-            <span>${act.steps} pas · ${act.distance.toFixed(2)} km · ${act.calories} kcal · ${dur}</span>
+            <span>${act.steps} pas · ${act.distance.toFixed(2)} km · ${act.calories} kcal · ${dur} ${goalText}</span>
           </div>
           <span class="badge">${act.type || "marche"}</span>
         </div>
@@ -569,7 +913,7 @@ function retryMap() {
   }
 }
 
-// --- Météo (version avec emojis pour le vent) ---
+// --- Météo ---
 async function fetchWeather() {
   weatherModal.style.display = "grid";
   weatherLocation.textContent = "Recherche de votre position...";
@@ -613,11 +957,9 @@ async function fetchWeather() {
     const desc = current.weatherDesc?.[0]?.value || "Inconnu";
     const humidity = current.humidity || "--";
     
-    // --- Gestion du vent avec emoji ---
     let windSpeed = current.windSpeed || "--";
     let windDirText = current.winddir16Point || "";
     
-    // Fonction pour obtenir l'emoji du vent en fonction de la vitesse
     function getWindEmoji(speed) {
       const s = parseFloat(speed);
       if (isNaN(s) || s < 0) return "🍃";
@@ -639,14 +981,12 @@ async function fetchWeather() {
       }
     }
 
-    // --- Gestion de l'UV ---
     let uv = current.uvIndex || "--";
     if (uv === "0" || uv === 0 || uv === "0.0") {
       uv = "🌙 N/A (nuit)";
     } else if (uv === "N/A" || uv === "--" || uv === "") {
       uv = "N/A";
     } else {
-      // Ajouter un emoji UV
       const uvNum = parseFloat(uv);
       if (uvNum <= 2) uv = `🟢 ${uv} (faible)`;
       else if (uvNum <= 5) uv = `🟡 ${uv} (modéré)`;
@@ -655,7 +995,6 @@ async function fetchWeather() {
       else uv = `🟣 ${uv} (extrême)`;
     }
 
-    // --- Emoji météo ---
     let emoji = "🌤️";
     const lowerDesc = desc.toLowerCase();
     if (lowerDesc.includes("pluie") || lowerDesc.includes("averse")) emoji = "🌧️";
@@ -665,8 +1004,7 @@ async function fetchWeather() {
     else if (lowerDesc.includes("soleil") || lowerDesc.includes("ensoleillé") || lowerDesc.includes("clair")) emoji = "☀️";
     else if (lowerDesc.includes("nuage")) emoji = "☁️";
 
-    // Mise à jour de l'interface
-    weatherLocation.textContent = ` ${areaName}`;
+    weatherLocation.textContent = `📍 ${areaName}`;
     weatherEmoji.textContent = emoji;
     weatherTemp.textContent = `${temp}°C`;
     weatherDesc.textContent = desc;
@@ -690,30 +1028,50 @@ function closeWeather() {
 
 // --- Initialisation ---
 export function initActivityPage() {
+  console.log("📌 initActivityPage() appelée");
+
   const prefs = getPrefs();
   displayWeight.textContent = prefs.weight || 70;
 
-  startBtn.addEventListener("click", startTracking);
-  stopBtn.addEventListener("click", stopTracking);
-  saveBtn.addEventListener("click", saveActivity);
-  shareBtn.addEventListener("click", shareActivity);
-  resetBtn.addEventListener("click", resetSession);
-  weatherBtn.addEventListener("click", fetchWeather);
-  closeWeatherBtn.addEventListener("click", closeWeather);
-  weatherModal.addEventListener("click", (e) => {
-    if (e.target === weatherModal) closeWeather();
-  });
+  // Événements
+  if (startBtn) startBtn.addEventListener("click", startTracking);
+  if (stopBtn) stopBtn.addEventListener("click", stopTracking);
+  if (saveBtn) saveBtn.addEventListener("click", saveActivity);
+  if (shareBtn) shareBtn.addEventListener("click", shareActivity);
+  if (resetBtn) resetBtn.addEventListener("click", resetSession);
+  if (weatherBtn) weatherBtn.addEventListener("click", fetchWeather);
+  if (closeWeatherBtn) closeWeatherBtn.addEventListener("click", closeWeather);
+  if (weatherModal) {
+    weatherModal.addEventListener("click", (e) => {
+      if (e.target === weatherModal) closeWeather();
+    });
+  }
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && weatherModal.style.display === "grid") {
+    if (e.key === "Escape" && weatherModal && weatherModal.style.display === "grid") {
       closeWeather();
     }
   });
 
-  retryMapBtn.addEventListener("click", retryMap);
-  refreshHistoryBtn.addEventListener("click", () => { loadHistory(); renderStepsChart(); });
+  if (retryMapBtn) retryMapBtn.addEventListener("click", retryMap);
+  if (refreshHistoryBtn) {
+    refreshHistoryBtn.addEventListener("click", () => { loadHistory(); renderStepsChart(); });
+  }
 
-  centerMapBtn.addEventListener("click", centerOnUser);
-  fitPathBtn.addEventListener("click", fitPath);
+  if (centerMapBtn) centerMapBtn.addEventListener("click", centerOnUser);
+  if (fitPathBtn) fitPathBtn.addEventListener("click", fitPath);
+
+  if (startRouteBtn) startRouteBtn.addEventListener("click", startRouteDrawing);
+  if (cancelLastPointBtn) cancelLastPointBtn.addEventListener("click", cancelLastPoint);
+  if (finishRouteBtn) finishRouteBtn.addEventListener("click", finishRoute);
+  if (clearRouteBtn) clearRouteBtn.addEventListener("click", clearRoute);
+
+  if (goalDistanceInput) {
+    goalDistanceInput.addEventListener("input", () => {
+      const val = parseFloat(goalDistanceInput.value) || 0;
+      state.goalDistance = val;
+      updateGoalDisplay();
+    });
+  }
 
   try {
     loadHistory();
@@ -722,20 +1080,36 @@ export function initActivityPage() {
     renderStepsChart();
   } catch (e) { console.warn(e); }
 
+  // Initialisation de la carte
   if (typeof L !== "undefined") {
+    console.log("✅ Leaflet disponible, initMap()");
     initMap();
   } else {
+    console.warn("⚠️ Leaflet non disponible, chargement dynamique...");
     if (mapPlaceholder) mapPlaceholder.style.display = "grid";
     const script = document.createElement("script");
     script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-    script.onload = initMap;
+    script.onload = () => {
+      console.log("✅ Leaflet chargé dynamiquement, initMap()");
+      initMap();
+    };
+    script.onerror = () => {
+      console.error("❌ Échec du chargement de Leaflet");
+      toast("Impossible de charger la carte.");
+    };
     document.head.appendChild(script);
   }
 
   updateButtons();
+  updateGoalDisplay();
+  updateStatusMessage();
+  updateRouteButtons();
 
   window.addEventListener("beforeunload", () => {
     if (state.watchId) navigator.geolocation.clearWatch(state.watchId);
     if (state.timerInterval) clearInterval(state.timerInterval);
+    if (speechInterval) clearInterval(speechInterval);
   });
+
+  console.log("✅ initActivityPage() terminée");
 }
