@@ -7,6 +7,12 @@ import { toast } from "./notifications.js";
 const MET = { walk: 3.5, run: 8.0, bike: 5.5 };
 const STEP_LENGTH_M = 0.78;
 
+// Récupérer la clé API depuis l'environnement ou utiliser une variable globale
+// En développement, vous pouvez définir window.GOOGLE_MAPS_API_KEY
+const GOOGLE_MAPS_API_KEY = window.GOOGLE_MAPS_API_KEY || 
+  (import.meta.env && import.meta.env.VITE_GOOGLE_MAPS_API_KEY) || 
+  ""; // Ne mettez jamais de clé en dur ici !
+
 // --- État ---
 let state = {
   tracking: false,
@@ -41,18 +47,15 @@ let mapLoadTimeout = null;
 
 // --- Fonction d'initialisation de la carte (callback global) ---
 function initMap() {
-  // Vérifier que Google Maps est chargé
   if (typeof google === "undefined" || !google.maps) {
     console.warn("Google Maps non encore chargé.");
     return;
   }
-  // Éviter une double initialisation
   if (map) {
     console.log("Map déjà initialisée.");
     return;
   }
 
-  // Masquer le placeholder
   if (mapPlaceholder) mapPlaceholder.style.display = "none";
 
   const defaultPos = { lat: 48.8566, lng: 2.3522 };
@@ -67,30 +70,25 @@ function initMap() {
       fullscreenControl: true,
     });
 
-    // Centrer sur la position actuelle si possible
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           map.setCenter(loc);
         },
-        () => { /* silencieux */ },
+        () => {},
         { enableHighAccuracy: true, timeout: 5000 }
       );
     }
 
-    // Charger l'historique
     loadHistory();
-    // Mettre à jour les boutons
     updateButtons();
 
-    // Annuler le timeout si la carte a réussi à se charger
     clearTimeout(mapLoadTimeout);
     mapLoadTimeout = null;
   } catch (e) {
     console.error("Erreur lors de l'initialisation de la carte:", e);
     toast("Erreur de chargement de la carte.");
-    // Réafficher le placeholder avec un message d'erreur
     if (mapPlaceholder) {
       mapPlaceholder.style.display = "grid";
       mapPlaceholder.innerHTML = `
@@ -105,7 +103,6 @@ function initMap() {
   }
 }
 
-// Exposer la fonction globalement pour le callback de Google Maps
 window.initMap = initMap;
 
 // --- Fonctions UI ---
@@ -331,22 +328,27 @@ function retryMap() {
     toast("Carte recentrée.");
     return;
   }
+  
+  if (!GOOGLE_MAPS_API_KEY) {
+    toast("Clé API Google Maps manquante. Veuillez la configurer.");
+    return;
+  }
+  
   toast("Tentative de chargement de la carte...");
   if (typeof google !== "undefined" && google.maps) {
     initMap();
   } else {
-    // Supprimer l'ancien script pour éviter les doublons
     const oldScript = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
     if (oldScript) oldScript.remove();
     const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?AIzaSyBPECdLYBG8GAgJpMN8FIIjsBolflqa4Gw&callback=initMap&libraries=geometry`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&callback=initMap&libraries=geometry`;
     script.async = true;
     script.defer = true;
     document.head.appendChild(script);
     clearTimeout(mapLoadTimeout);
     mapLoadTimeout = setTimeout(() => {
       if (!map) {
-        toast("Le chargement de la carte a échoué. Vérifiez votre clé API.");
+        toast("Le chargement de la carte a échoué.");
         if (mapPlaceholder) {
           mapPlaceholder.style.display = "grid";
           mapPlaceholder.innerHTML = `
@@ -360,7 +362,7 @@ function retryMap() {
           document.getElementById("retryMapBtn")?.addEventListener("click", retryMap);
         }
       }
-    }, 10000);
+    }, 15000);
   }
 }
 
@@ -377,10 +379,25 @@ export function initActivityPage() {
 
   loadHistory();
 
-  if (typeof google !== "undefined" && google.maps) {
+  // Vérifier si la clé API est disponible
+  if (!GOOGLE_MAPS_API_KEY) {
+    console.warn("Clé API Google Maps non configurée. La carte ne pourra pas se charger.");
+    if (mapPlaceholder) {
+      mapPlaceholder.style.display = "grid";
+      mapPlaceholder.innerHTML = `
+        <div>
+          <p style="font-size: 2rem; margin: 0;">🗺️</p>
+          <p>Clé API manquante.</p>
+          <p style="font-size: 0.8rem; color: var(--muted);">Configurez votre clé API Google Maps.</p>
+        </div>
+      `;
+    }
+  } else if (typeof google !== "undefined" && google.maps) {
     initMap();
   } else {
     if (mapPlaceholder) mapPlaceholder.style.display = "grid";
+    // Charger automatiquement la carte avec la clé
+    retryMap();
   }
 
   updateButtons();

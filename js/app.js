@@ -18,6 +18,18 @@ import { renderDashboardCharts, renderMetrics, renderStatisticsPage } from "./st
 import { initSessionPage } from "./timer.js";
 import { generateProgramFromPrompt, initWorkoutPage } from "./workout.js";
 
+// app.js - au début du fichier, après les imports
+
+// Configuration de la clé API Google Maps
+// À remplacer par votre vraie clé en production
+// Pour développement, vous pouvez définir la clé ici
+// Production - utilisez une variable d'environnement
+const GOOGLE_MAPS_API_KEY = import.meta.env?.VITE_GOOGLE_MAPS_API_KEY || "";
+GOOGLE_MAPS_API_KEY = GOOGLE_MAPS_API_KEY;
+
+// En production, utilisez une variable d'environnement
+// window.GOOGLE_MAPS_API_KEY = import.meta.env?.VITE_GOOGLE_MAPS_API_KEY || "";
+
 let currentPage = document.body.dataset.page;
 let loaderTimer;
 let deferredInstallPrompt = null;
@@ -373,7 +385,7 @@ function updateInstallButton() {
     });
   }
 
-  
+
 async function installApp() {
   if (isAppInstalled()) {
     toast("Wistoria est deja installee.");
