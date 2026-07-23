@@ -1,3 +1,5 @@
+// app.js
+
 import { observeCards } from "./animation.js";
 import { initCalendarPage, renderTodayPlans } from "./calendar.js";
 import { initManualPage } from "./manual.js";
@@ -16,19 +18,11 @@ import {
 } from "./storage.js";
 import { renderDashboardCharts, renderMetrics, renderStatisticsPage } from "./statistics.js";
 import { initSessionPage } from "./timer.js";
-import { generateProgramFromPrompt, initWorkoutPage } from "./workout.js";
-
-// app.js - au début du fichier, après les imports
+import { generateSmartProgram, initWorkoutPage } from "./workout.js";
 
 // Configuration de la clé API Google Maps
-// À remplacer par votre vraie clé en production
-// Pour développement, vous pouvez définir la clé ici
-// Production - utilisez une variable d'environnement
 const GOOGLE_MAPS_API_KEY = import.meta.env?.VITE_GOOGLE_MAPS_API_KEY || "";
-GOOGLE_MAPS_API_KEY = GOOGLE_MAPS_API_KEY;
-
-// En production, utilisez une variable d'environnement
-// window.GOOGLE_MAPS_API_KEY = import.meta.env?.VITE_GOOGLE_MAPS_API_KEY || "";
+window.GOOGLE_MAPS_API_KEY = GOOGLE_MAPS_API_KEY;
 
 let currentPage = document.body.dataset.page;
 let loaderTimer;
@@ -43,7 +37,6 @@ const navItems = [
   ["calendar.html", "C", "Calendrier", "calendar"],
   ["statistics.html", "S", "Statistiques", "statistics"],
   ["settings.html", "P", "Parametres", "settings"],
-  // Nouvelle entrée
   ["activity.html", "A", "Activité", "activity"]
 ];
 
@@ -100,7 +93,7 @@ function renderNavigation() {
   const sidebar = document.querySelector("[data-sidebar]");
   const bottom = document.querySelector("[data-bottom-nav]");
   const links = navItems.map(([href, icon, label, key]) => `
-    <a class="nav-link ${currentPage === key ? "active" : ""}" href="${href}">
+    <a class="nav-link ${currentPage === key ? "active" : ""}" href="${href}" data-nav="${key}">
       <span class="nav-icon">${icon}</span>
       <span>${label}</span>
     </a>`).join("");
@@ -119,8 +112,8 @@ function renderNavigation() {
   }
 
   if (bottom) {
-    bottom.innerHTML = navItems.slice(0, 5).map(([href, icon, label, key]) =>
-      `<a class="${currentPage === key ? "active" : ""}" href="${href}" aria-label="${label}">${icon}</a>`
+    bottom.innerHTML = navItems.map(([href, icon, label, key]) =>
+      `<a class="${currentPage === key ? "active" : ""}" href="${href}" aria-label="${label}" data-nav="${key}">${icon}</a>`
     ).join("");
   }
 }
@@ -136,61 +129,75 @@ async function navigateTo(href, options = {}) {
     return;
   }
 
+  // Éviter de naviguer vers la même page
+  if (url.pathname === location.pathname && !options.force) {
+    return;
+  }
+
   showLoader("Transition fluide vers la prochaine section.");
-  const response = await fetch(url.href, { cache: "no-cache" });
-  if (!response.ok) {
+  
+  try {
+    const response = await fetch(url.href, { cache: "no-cache" });
+    if (!response.ok) {
+      hideLoader(0);
+      location.href = url.href;
+      return;
+    }
+
+    const html = await response.text();
+    const nextDocument = new DOMParser().parseFromString(html, "text/html");
+    const nextMain = nextDocument.querySelector(".main");
+    if (!nextMain) {
+      hideLoader(0);
+      location.href = url.href;
+      return;
+    }
+
+    const swapPage = async () => {
+      document.querySelector(".main").innerHTML = nextMain.innerHTML;
+      pageExtras.forEach((id) => document.getElementById(id)?.remove());
+      pageExtras.forEach((id) => {
+        const node = nextDocument.getElementById(id);
+        if (node) document.body.append(node);
+      });
+
+      currentPage = nextDocument.body.dataset.page;
+      document.body.dataset.page = currentPage;
+      document.title = nextDocument.title;
+      document.body.classList.remove("nav-open");
+      renderNavigation();
+    };
+
+    if (document.startViewTransition && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      await document.startViewTransition(swapPage).finished;
+    } else {
+      await swapPage();
+    }
+
+    if (!options.replace) history.pushState({ page: currentPage }, "", url.href);
+    await runCurrentPage();
+    animateMain();
+    if (url.hash) {
+      requestAnimationFrame(() => document.querySelector(url.hash)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    }
+    hideLoader(180);
+  } catch (error) {
+    console.error("Navigation error:", error);
     hideLoader(0);
     location.href = url.href;
-    return;
   }
-
-  const html = await response.text();
-  const nextDocument = new DOMParser().parseFromString(html, "text/html");
-  const nextMain = nextDocument.querySelector(".main");
-  if (!nextMain) {
-    hideLoader(0);
-    location.href = url.href;
-    return;
-  }
-
-  const swapPage = async () => {
-    document.querySelector(".main").innerHTML = nextMain.innerHTML;
-    pageExtras.forEach((id) => document.getElementById(id)?.remove());
-    pageExtras.forEach((id) => {
-      const node = nextDocument.getElementById(id);
-      if (node) document.body.append(node);
-    });
-
-    currentPage = nextDocument.body.dataset.page;
-    document.body.dataset.page = currentPage;
-    document.title = nextDocument.title;
-    document.body.classList.remove("nav-open");
-    renderNavigation();
-  };
-
-  if (document.startViewTransition && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    await document.startViewTransition(swapPage).finished;
-  } else {
-    await swapPage();
-  }
-
-  if (!options.replace) history.pushState({ page: currentPage }, "", url.href);
-  await runCurrentPage();
-  animateMain();
-  if (url.hash) {
-    requestAnimationFrame(() => document.querySelector(url.hash)?.scrollIntoView({ behavior: "smooth", block: "start" }));
-  }
-  hideLoader(180);
 }
 
 function attachGlobalActions() {
   document.addEventListener("click", async (event) => {
+    // Menu mobile
     const menu = event.target.closest("[data-menu]");
     if (menu) {
       document.body.classList.toggle("nav-open");
       return;
     }
 
+    // Liens de navigation
     const anchor = event.target.closest("a[href]");
     if (anchor && !anchor.target && !anchor.hasAttribute("download")) {
       const url = new URL(anchor.getAttribute("href"), location.href);
@@ -201,6 +208,7 @@ function attachGlobalActions() {
       }
     }
 
+    // Actions rapides
     if (event.target.matches("[data-quick-session]")) {
       const program = await createProgramFromGoal("Mobilite");
       setActiveProgram(program.id);
@@ -208,10 +216,7 @@ function attachGlobalActions() {
       await navigateTo("session.html");
     }
 
-    // app.js (extrait modifié dans la partie attachGlobalActions)
     if (event.target.matches("[data-generate-session]")) {
-      // Utiliser la nouvelle fonction intelligente
-      const { generateSmartProgram } = await import("./workout.js");
       const program = await generateSmartProgram();
       setActiveProgram(program.id);
       await navigateTo("workout.html");
@@ -249,18 +254,17 @@ async function exportJson() {
   toast("Export JSON genere.");
 }
 
-// app.js - dans initSettingsPage()
-
 function initSettingsPage() {
   const prefs = getPrefs();
   updateInstallButton();
+  
   Object.entries(prefs).forEach(([key, value]) => {
     const field = document.getElementById(key);
     if (!field) return;
     field.value = String(value);
   });
 
-  
+  // Formulaire des paramètres
   document.getElementById("settingsForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     const next = savePrefs({
@@ -275,8 +279,7 @@ function initSettingsPage() {
       musicPauseOnStop: document.getElementById("musicPauseOnStop").value === "true",
       spotifyClientId: document.getElementById("spotifyClientId").value.trim(),
       boomplayWorkoutUrl: document.getElementById("boomplayWorkoutUrl").value.trim(),
-      // AJOUT
-    weight: Number(document.getElementById("weight").value || 70)
+      weight: Number(document.getElementById("weight").value || 70)
     });
     document.documentElement.dataset.theme = next.theme;
     toast("Parametres enregistres.");
@@ -292,6 +295,64 @@ function initSettingsPage() {
     applyTheme();
     toast("Import termine.");
   });
+
+  // Gestion du bouton de mise à jour
+  const checkBtn = document.getElementById("checkUpdateBtn");
+  const forceBtn = document.getElementById("forceUpdateBtn");
+  const statusEl = document.getElementById("updateStatus");
+
+  if (checkBtn) {
+    checkBtn.addEventListener("click", async () => {
+      if (!("serviceWorker" in navigator)) {
+        statusEl.textContent = "❌ Service Worker non supporté.";
+        return;
+      }
+      const registration = await navigator.serviceWorker.ready;
+      try {
+        await registration.update();
+        statusEl.textContent = "✅ Vérification effectuée. Aucune mise à jour trouvée.";
+        if (registration.waiting) {
+          statusEl.textContent = "🔄 Une mise à jour est disponible. Cliquez sur 'Appliquer'.";
+          forceBtn.style.display = "inline-flex";
+        } else {
+          forceBtn.style.display = "none";
+          setTimeout(() => {
+            if (registration.waiting) {
+              statusEl.textContent = "🔄 Une mise à jour est disponible. Cliquez sur 'Appliquer'.";
+              forceBtn.style.display = "inline-flex";
+            }
+          }, 1000);
+        }
+      } catch (err) {
+        statusEl.textContent = "❌ Erreur lors de la vérification : " + err.message;
+      }
+    });
+  }
+
+  if (forceBtn) {
+    forceBtn.addEventListener("click", () => {
+      if (!("serviceWorker" in navigator)) return;
+      navigator.serviceWorker.ready.then((registration) => {
+        const waiting = registration.waiting;
+        if (waiting) {
+          waiting.postMessage({ type: "SKIP_WAITING" });
+          setTimeout(() => {
+            window.location.reload();
+          }, 500);
+        } else {
+          statusEl.textContent = "⚠️ Aucune mise à jour en attente.";
+          forceBtn.style.display = "none";
+        }
+      });
+    });
+  }
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      statusEl.textContent = "✅ Mise à jour appliquée. Rechargement...";
+      setTimeout(() => window.location.reload(), 500);
+    });
+  }
 }
 
 function isAppInstalled() {
@@ -318,73 +379,6 @@ function updateInstallButton() {
       : "Si rien ne s'ouvre, utilise le menu du navigateur puis Installer l'application ou Ajouter a l'ecran d'accueil.";
   }
 }
-
-  // ... (le reste du code existant)
-
-  // Gestion du bouton de mise à jour
-  const checkBtn = document.getElementById("checkUpdateBtn");
-  const forceBtn = document.getElementById("forceUpdateBtn");
-  const statusEl = document.getElementById("updateStatus");
-
-  if (checkBtn) {
-    checkBtn.addEventListener("click", async () => {
-      if (!("serviceWorker" in navigator)) {
-        statusEl.textContent = "❌ Service Worker non supporté.";
-        return;
-      }
-      const registration = await navigator.serviceWorker.ready;
-      try {
-        await registration.update();
-        statusEl.textContent = "✅ Vérification effectuée. Aucune mise à jour trouvée.";
-        // Vérifier s'il y a un nouveau worker en attente
-        if (registration.waiting) {
-          statusEl.textContent = "🔄 Une mise à jour est disponible. Cliquez sur 'Appliquer'.";
-          forceBtn.style.display = "inline-flex";
-          // On peut aussi proposer de recharger automatiquement
-        } else {
-          forceBtn.style.display = "none";
-          // Vérifier après un délai si un worker est en attente
-          setTimeout(() => {
-            if (registration.waiting) {
-              statusEl.textContent = "🔄 Une mise à jour est disponible. Cliquez sur 'Appliquer'.";
-              forceBtn.style.display = "inline-flex";
-            }
-          }, 1000);
-        }
-      } catch (err) {
-        statusEl.textContent = "❌ Erreur lors de la vérification : " + err.message;
-      }
-    });
-  }
-
-  if (forceBtn) {
-    forceBtn.addEventListener("click", () => {
-      if (!("serviceWorker" in navigator)) return;
-      navigator.serviceWorker.ready.then((registration) => {
-        const waiting = registration.waiting;
-        if (waiting) {
-          // Envoyer un message au service worker pour qu'il prenne le contrôle
-          waiting.postMessage({ type: "SKIP_WAITING" });
-          // Recharger la page après un court délai
-          setTimeout(() => {
-            window.location.reload();
-          }, 500);
-        } else {
-          statusEl.textContent = "⚠️ Aucune mise à jour en attente.";
-          forceBtn.style.display = "none";
-        }
-      });
-    });
-  }
-
-  // Écouter les changements de service worker
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.addEventListener("controllerchange", () => {
-      statusEl.textContent = "✅ Mise à jour appliquée. Rechargement...";
-      setTimeout(() => window.location.reload(), 500);
-    });
-  }
-
 
 async function installApp() {
   if (isAppInstalled()) {
