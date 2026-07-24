@@ -1,4 +1,4 @@
-/* css/activity.css - Version professionnelle */
+/* css/activity.css - Version avec z-index corrigés pour les dropdowns */
 
 .activity-stats {
   display: grid;
@@ -121,7 +121,7 @@
   text-align: right;
 }
 
-/* Barre d'actions */
+/* Barre d'actions avec dropdowns */
 .action-bar {
   display: flex;
   flex-wrap: wrap;
@@ -129,6 +129,8 @@
   margin-bottom: 16px;
   padding: 10px 0;
   border-bottom: 1px solid var(--line);
+  position: relative;
+  z-index: 100; /* Pour que la barre soit au-dessus de la carte */
 }
 
 .action-bar .btn {
@@ -136,18 +138,74 @@
   font-size: 0.85rem;
 }
 
+/* Dropdown toggle (via JS) */
+.dropdown {
+  position: relative;
+  display: inline-block;
+  z-index: 2000; /* Niveau supérieur à la carte */
+}
+
+.dropdown-content {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+  z-index: 3000; /* Encore plus haut */
+  min-width: 160px;
+  padding: 6px 0;
+}
+
+.dropdown-content .btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  font-size: 0.85rem;
+}
+
+.dropdown-content .btn:hover {
+  background: var(--bg-soft);
+}
+
+.dropdown.open .dropdown-content {
+  display: block;
+}
+
+/* Sur mobile, on évite que le menu sorte à droite */
+@media (max-width: 520px) {
+  .dropdown-content {
+    right: 0;
+    left: auto;
+  }
+}
+
+#moreBtn::after, #routeMenuBtn::after {
+  content: ' ▾';
+  font-size: 0.7rem;
+  opacity: 0.7;
+}
+
+/* Carte - hauteur réduite */
 .activity-map-wrap {
   border-radius: var(--radius);
   overflow: hidden;
   margin-bottom: 18px;
   border: 1px solid var(--line);
   background: var(--panel-strong);
-  min-height: 340px;
+  min-height: 240px;
   position: relative;
+  z-index: 1; /* Niveau de base pour la carte */
 }
 
 #map {
-  height: 400px !important;
+  height: 280px !important;
   width: 100% !important;
   background: var(--bg-soft);
 }
@@ -155,7 +213,7 @@
 .map-placeholder {
   display: grid;
   place-items: center;
-  height: 400px;
+  height: 280px;
   color: var(--muted);
   text-align: center;
   padding: 20px;
@@ -172,7 +230,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  z-index: 1000;
+  z-index: 1000; /* Contrôles Leaflet par défaut */
 }
 
 .map-controls .btn {
@@ -247,7 +305,7 @@
   backdrop-filter: blur(8px);
   display: grid;
   place-items: center;
-  z-index: 1000;
+  z-index: 10000;
   padding: 20px;
   animation: fadeIn 0.25s ease;
 }
@@ -374,6 +432,56 @@
   box-shadow: 0 2px 6px rgba(0,0,0,0.3);
 }
 
+/* ===== Mode agrandi de la carte ===== */
+#map-expanded {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  background: var(--bg-soft);
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  animation: zoomIn 0.3s ease;
+}
+
+#map-expanded #map {
+  height: 100vh !important;
+  width: 100vw !important;
+  border-radius: 0;
+}
+
+#closeExpandedMapBtn {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10001;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  font-size: 1.4rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+
+#closeExpandedMapBtn:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+@keyframes zoomIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
 /* Responsive */
 @media (max-width: 820px) {
   .activity-stats { grid-template-columns: repeat(2, 1fr); }
@@ -384,7 +492,9 @@
   .activity-stats { grid-template-columns: repeat(2, 1fr); }
   .activity-controls { flex-direction: column; align-items: stretch; }
   .activity-controls .field { min-width: auto; }
-  #map { height: 280px !important; }
+  #map { height: 220px !important; }
+  .activity-map-wrap { min-height: 180px; }
+  .map-placeholder { height: 220px; }
   .map-controls .btn { width: 36px; height: 36px; font-size: 1rem; }
   .weather-modal-content { padding: 20px 16px; }
   .weather-main span { font-size: 2rem !important; }
@@ -392,4 +502,5 @@
   .objective-bar { flex-direction: column; align-items: stretch; }
   .objective-bar input { width: 100%; }
   #goalDistanceLabel { text-align: left; }
+  #map-expanded #map { height: 100vh !important; }
 }

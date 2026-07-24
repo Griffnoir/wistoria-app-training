@@ -1,4 +1,4 @@
-// js/activity.js - Version finale avec corrections de la carte, assistance vocale et objectif automatique
+// js/activity.js - Version finale avec menus déroulants, correction des z-index et agrandissement
 
 import { getAll, getPrefs, putItem, uid } from "./storage.js";
 import { toast } from "./notifications.js";
@@ -6,7 +6,7 @@ import { toast } from "./notifications.js";
 // --- Constantes ---
 const MET = { walk: 3.5, run: 8.0, bike: 5.5 };
 const STEP_LENGTH_M = 0.78;
-const SPEECH_INTERVAL = 30000; // 30 secondes
+const SPEECH_INTERVAL = 30000;
 
 // --- État ---
 let state = {
@@ -20,12 +20,12 @@ let state = {
   calories: 0,
   lastPosition: null,
   goalDistance: 5,
-  // Itinéraire
   routePoints: [],
   routePolyline: null,
   routeMarkers: [],
   isDrawingRoute: false,
   routeDistance: 0,
+  voiceEnabled: true,
 };
 
 // --- Éléments DOM ---
@@ -43,6 +43,9 @@ const startRouteBtn = document.getElementById("startRouteBtn");
 const cancelLastPointBtn = document.getElementById("cancelLastPointBtn");
 const finishRouteBtn = document.getElementById("finishRouteBtn");
 const clearRouteBtn = document.getElementById("clearRouteBtn");
+const toggleVoiceBtn = document.getElementById("toggleVoiceBtn");
+const importGpxBtn = document.getElementById("importGpxBtn");
+const toggleMapBtn = document.getElementById("toggleMapBtn");
 const historyList = document.getElementById("activityHistoryList");
 const activityType = document.getElementById("activityType");
 const displayWeight = document.getElementById("displayWeight");
@@ -75,6 +78,7 @@ let startMarker = null;
 let endMarker = null;
 let stepsChartInstance = null;
 let speechInterval = null;
+let isMapExpanded = false;
 
 // --- Filtre GPS (moyenne glissante) ---
 const gpsBuffer = [];
@@ -108,7 +112,7 @@ function distanceBetween(lat1, lng1, lat2, lng2) {
 
 // --- Synthèse vocale ---
 function speak(text) {
-  if (!('speechSynthesis' in window)) return;
+  if (!('speechSynthesis' in window) || !state.voiceEnabled) return;
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = 'fr-FR';
@@ -130,28 +134,22 @@ function startSpeechUpdates() {
       speechInterval = null;
       return;
     }
-    let message = `Distance parcourue : ${state.totalDistanceKm.toFixed(1)} kilomètres.`;
+    if (!state.voiceEnabled) return;
+    let message = `Distance : ${state.totalDistanceKm.toFixed(1)} km. Pas : ${Math.round(state.steps)}.`;
     if (state.routePoints.length > 1 && state.routeDistance > 0) {
       const remaining = Math.max(0, state.routeDistance - state.totalDistanceKm);
-      message += ` Il vous reste ${remaining.toFixed(1)} kilomètres à parcourir.`;
-      const progress = (state.totalDistanceKm / state.routeDistance) * 100;
-      if (progress >= 100) {
-        message += " Objectif atteint !";
-      }
+      message += ` Reste ${remaining.toFixed(1)} km.`;
     }
     if (state.goalDistance > 0) {
       const goalRemaining = Math.max(0, state.goalDistance - state.totalDistanceKm);
-      if (goalRemaining > 0) {
-        message += ` Objectif personnel : ${goalRemaining.toFixed(1)} kilomètres restants.`;
-      } else {
-        message += " Objectif personnel atteint !";
-      }
+      if (goalRemaining > 0) message += ` Objectif : ${goalRemaining.toFixed(1)} km.`;
+      else message += " Objectif atteint !";
     }
     speak(message);
   }, SPEECH_INTERVAL);
 }
 
-// --- Icône point bleu ---
+// --- Icônes ---
 function getCurrentIcon() {
   return L.divIcon({
     className: 'current-location-dot',
@@ -161,7 +159,6 @@ function getCurrentIcon() {
   });
 }
 
-// --- Création d'un marqueur numéroté pour l'itinéraire ---
 function createRouteMarker(index) {
   return L.divIcon({
     className: 'route-marker-number',
@@ -171,14 +168,13 @@ function createRouteMarker(index) {
   });
 }
 
-// --- Initialisation de la carte (avec logs de debug) ---
+// --- Initialisation de la carte ---
 function initMap() {
   console.log("🚀 initMap() appelée");
   if (map) {
     console.log("⚠️ Carte déjà initialisée");
     return;
   }
-  // Vérifier que le conteneur existe
   const mapContainer = document.getElementById("map");
   if (!mapContainer) {
     console.error("❌ Élément #map introuvable !");
@@ -203,14 +199,12 @@ function initMap() {
     }).addTo(map);
     console.log("✅ Tuile OSM ajoutée");
 
-    // Gestion des clics pour l'itinéraire
     map.on('click', (e) => {
       if (state.isDrawingRoute) {
         addRoutePoint(e.latlng.lat, e.latlng.lng);
       }
     });
 
-    // Géolocalisation
     if (navigator.geolocation) {
       console.log("📡 Tentative de géolocalisation...");
       navigator.geolocation.getCurrentPosition(
@@ -230,12 +224,12 @@ function initMap() {
       console.warn("⚠️ Geolocation non supportée");
     }
 
-    // Charger les données
     loadHistory();
     renderStepsChart();
     updateButtons();
     updateGoalDisplay();
     updateRouteButtons();
+    updateVoiceButton();
 
     console.log("✅ initMap() terminée avec succès");
   } catch (error) {
@@ -247,7 +241,7 @@ function initMap() {
 // --- Gestion de l'itinéraire ---
 function startRouteDrawing() {
   if (state.tracking) {
-    toast("Arrêtez d'abord le suivi pour tracer un itinéraire.");
+    toast("Arrêtez d'abord le suivi.");
     return;
   }
   clearRoute();
@@ -257,7 +251,7 @@ function startRouteDrawing() {
   startRouteBtn.disabled = true;
   cancelLastPointBtn.disabled = false;
   finishRouteBtn.disabled = false;
-  toast("Cliquez sur la carte pour ajouter des points.");
+  toast("Cliquez sur la carte.");
   updateStatusMessage();
   updateRouteButtons();
 }
@@ -265,13 +259,11 @@ function startRouteDrawing() {
 function addRoutePoint(lat, lng) {
   if (!state.isDrawingRoute) return;
   state.routePoints.push({ lat, lng });
-  const marker = L.marker([lat, lng], {
-    icon: createRouteMarker(state.routePoints.length - 1),
-  }).addTo(map);
+  const marker = L.marker([lat, lng], { icon: createRouteMarker(state.routePoints.length - 1) }).addTo(map);
   state.routeMarkers.push(marker);
   updateRouteLine();
   calculateRouteDistance();
-  toast(`Point ${state.routePoints.length} ajouté (${state.routeDistance.toFixed(2)} km)`);
+  toast(`Point ${state.routePoints.length} (${state.routeDistance.toFixed(2)} km)`);
   updateRouteButtons();
 }
 
@@ -282,16 +274,14 @@ function cancelLastPoint() {
   state.routePoints.pop();
   updateRouteLine();
   calculateRouteDistance();
-  if (state.routePoints.length === 0) {
-    cancelLastPointBtn.disabled = true;
-  }
-  toast(`Dernier point supprimé. Reste ${state.routePoints.length} points.`);
+  if (state.routePoints.length === 0) cancelLastPointBtn.disabled = true;
+  toast("Dernier point supprimé.");
   updateRouteButtons();
 }
 
 function finishRoute() {
   if (state.routePoints.length < 2) {
-    toast("Il faut au moins 2 points pour un itinéraire.");
+    toast("Il faut au moins 2 points.");
     return;
   }
   state.isDrawingRoute = false;
@@ -300,8 +290,6 @@ function finishRoute() {
   cancelLastPointBtn.disabled = true;
   finishRouteBtn.disabled = true;
   calculateRouteDistance();
-
-  // Définir automatiquement l'objectif de distance
   if (state.routeDistance > 0) {
     const currentGoal = parseFloat(goalDistanceInput?.value) || 0;
     if (currentGoal === 0 || currentGoal === 5) {
@@ -311,9 +299,9 @@ function finishRoute() {
         state.goalDistance = newGoal;
         updateGoalDisplay();
       }
-      toast(`🎯 Objectif automatique : ${newGoal.toFixed(1)} km (basé sur l'itinéraire)`);
+      toast(`🎯 Objectif : ${newGoal.toFixed(1)} km`);
     } else {
-      toast(`✅ Itinéraire terminé : ${state.routeDistance.toFixed(2)} km (objectif déjà défini)`);
+      toast(`✅ Itinéraire : ${state.routeDistance.toFixed(2)} km`);
     }
   }
   updateStatusMessage();
@@ -389,7 +377,6 @@ function updateGoalDisplay() {
   const goal = parseFloat(goalDistanceInput?.value) || 0;
   state.goalDistance = goal;
   const current = state.totalDistanceKm || 0;
-
   if (goal === 0) {
     if (goalProgressBar) {
       goalProgressBar.style.width = '0%';
@@ -400,7 +387,6 @@ function updateGoalDisplay() {
     }
     return;
   }
-
   const percent = Math.min(100, (current / goal) * 100);
   if (goalProgressBar) {
     goalProgressBar.style.width = percent + '%';
@@ -421,7 +407,7 @@ function updateStatusMessage() {
     }
     statusMsg.innerHTML = msg;
   } else if (state.isDrawingRoute) {
-    statusMsg.innerHTML = '✏️ Mode tracé - Cliquez sur la carte pour ajouter des points';
+    statusMsg.innerHTML = '✏️ Mode tracé - Cliquez sur la carte';
   } else {
     statusMsg.innerHTML = state.totalDistanceKm > 0 ? '⏸️ Arrêté' : '⏸️ En attente';
   }
@@ -444,23 +430,116 @@ function updateButtons() {
   updateRouteButtons();
 }
 
-// --- Dessin du tracé effectué ---
+function updateVoiceButton() {
+  if (!toggleVoiceBtn) return;
+  toggleVoiceBtn.textContent = state.voiceEnabled ? '🔊 Voix' : '🔇 Voix';
+  toggleVoiceBtn.title = state.voiceEnabled ? 'Désactiver la voix' : 'Activer la voix';
+}
+
+function toggleVoice() {
+  state.voiceEnabled = !state.voiceEnabled;
+  updateVoiceButton();
+  if (!state.voiceEnabled) {
+    window.speechSynthesis.cancel();
+    toast("🔇 Voix désactivée");
+  } else {
+    toast("🔊 Voix activée");
+    if (state.tracking) speak("Voix activée.");
+  }
+}
+
+// --- Agrandissement de la carte ---
+function toggleMapSize() {
+  const mapContainer = document.getElementById('map');
+  if (!mapContainer) return;
+
+  if (!isMapExpanded) {
+    const expandedContainer = document.createElement('div');
+    expandedContainer.id = 'map-expanded';
+    expandedContainer.style.position = 'fixed';
+    expandedContainer.style.top = '0';
+    expandedContainer.style.left = '0';
+    expandedContainer.style.width = '100vw';
+    expandedContainer.style.height = '100vh';
+    expandedContainer.style.zIndex = '9999';
+    expandedContainer.style.background = 'var(--bg-soft)';
+    expandedContainer.style.animation = 'zoomIn 0.3s ease';
+    expandedContainer.style.padding = '0';
+    expandedContainer.style.margin = '0';
+    expandedContainer.style.border = 'none';
+    expandedContainer.style.borderRadius = '0';
+    
+    const parent = mapContainer.parentNode;
+    parent.removeChild(mapContainer);
+    expandedContainer.appendChild(mapContainer);
+    document.body.appendChild(expandedContainer);
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.id = 'closeExpandedMapBtn';
+    closeBtn.innerHTML = '✕';
+    closeBtn.style.position = 'fixed';
+    closeBtn.style.top = '16px';
+    closeBtn.style.right = '16px';
+    closeBtn.style.zIndex = '10001';
+    closeBtn.style.background = 'rgba(0,0,0,0.6)';
+    closeBtn.style.color = 'white';
+    closeBtn.style.border = 'none';
+    closeBtn.style.borderRadius = '50%';
+    closeBtn.style.width = '40px';
+    closeBtn.style.height = '40px';
+    closeBtn.style.fontSize = '1.4rem';
+    closeBtn.style.cursor = 'pointer';
+    closeBtn.style.display = 'flex';
+    closeBtn.style.alignItems = 'center';
+    closeBtn.style.justifyContent = 'center';
+    closeBtn.style.backdropFilter = 'blur(4px)';
+    closeBtn.addEventListener('click', toggleMapSize);
+    document.body.appendChild(closeBtn);
+    
+    if (map) {
+      setTimeout(() => map.invalidateSize(), 100);
+    }
+    
+    isMapExpanded = true;
+    if (toggleMapBtn) {
+      toggleMapBtn.textContent = '⛶';
+      toggleMapBtn.title = 'Réduire la carte';
+    }
+  } else {
+    const expandedContainer = document.getElementById('map-expanded');
+    const mapElement = document.getElementById('map');
+    const originalWrap = document.querySelector('.activity-map-wrap');
+    
+    if (expandedContainer && mapElement && originalWrap) {
+      expandedContainer.removeChild(mapElement);
+      originalWrap.insertBefore(mapElement, originalWrap.querySelector('.map-controls'));
+    }
+    
+    if (expandedContainer) {
+      expandedContainer.remove();
+    }
+    
+    const closeBtn = document.getElementById('closeExpandedMapBtn');
+    if (closeBtn) closeBtn.remove();
+    
+    if (map) {
+      setTimeout(() => map.invalidateSize(), 100);
+    }
+    
+    isMapExpanded = false;
+    if (toggleMapBtn) {
+      toggleMapBtn.textContent = '⛶';
+      toggleMapBtn.title = 'Agrandir la carte';
+    }
+  }
+}
+
+// --- Dessin du tracé ---
 function drawPath() {
-  if (polyline) {
-    polyline.remove();
-    polyline = null;
-  }
-  if (startMarker) {
-    startMarker.remove();
-    startMarker = null;
-  }
-  if (endMarker) {
-    endMarker.remove();
-    endMarker = null;
-  }
-
+  if (polyline) { polyline.remove(); polyline = null; }
+  if (startMarker) { startMarker.remove(); startMarker = null; }
+  if (endMarker) { endMarker.remove(); endMarker = null; }
   if (!map || state.path.length < 2) return;
-
   const latlngs = state.path.map(p => [p.lat, p.lng]);
   polyline = L.polyline(latlngs, {
     color: "#1a73e8",
@@ -468,12 +547,10 @@ function drawPath() {
     opacity: 0.9,
     smoothFactor: 1,
   }).addTo(map);
-
   const first = state.path[0];
   startMarker = L.marker([first.lat, first.lng], {
     icon: L.divIcon({ className: 'start-marker', html: '🟢', iconSize: [20, 20] })
   }).addTo(map).bindPopup("Départ");
-
   const last = state.path[state.path.length - 1];
   endMarker = L.marker([last.lat, last.lng], {
     icon: L.divIcon({ className: 'end-marker', html: '🔴', iconSize: [20, 20] })
@@ -488,14 +565,11 @@ function centerOnUser() {
       (pos) => {
         const loc = [pos.coords.latitude, pos.coords.longitude];
         map.setView(loc, 16);
-        if (marker) {
-          marker.setLatLng(loc);
-        } else {
-          marker = L.marker(loc, { icon: getCurrentIcon() }).addTo(map);
-        }
-        toast("Centré sur votre position.");
+        if (marker) marker.setLatLng(loc);
+        else marker = L.marker(loc, { icon: getCurrentIcon() }).addTo(map);
+        toast("Centré.");
       },
-      () => toast("Impossible de récupérer la position."),
+      () => toast("Position impossible."),
       { enableHighAccuracy: true, timeout: 5000 }
     );
   } else {
@@ -503,32 +577,72 @@ function centerOnUser() {
   }
 }
 
-// --- Ajuster la vue sur le tracé ---
 function fitPath() {
   if (!map || state.path.length < 2) {
-    toast("Pas assez de points pour ajuster la vue.");
+    toast("Pas assez de points.");
     return;
   }
   const latlngs = state.path.map(p => [p.lat, p.lng]);
   const bounds = L.latLngBounds(latlngs);
   map.fitBounds(bounds, { padding: [30, 30] });
-  toast("Vue ajustée sur le tracé.");
+  toast("Vue ajustée.");
+}
+
+// --- Importer GPX ---
+function importGPX() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.gpx,.xml';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(text, 'text/xml');
+      const trkpts = xmlDoc.getElementsByTagName('trkpt');
+      if (trkpts.length === 0) {
+        toast("❌ Aucun point GPX trouvé.");
+        return;
+      }
+      const newPath = [];
+      for (let i = 0; i < trkpts.length; i++) {
+        const lat = parseFloat(trkpts[i].getAttribute('lat'));
+        const lng = parseFloat(trkpts[i].getAttribute('lon'));
+        if (!isNaN(lat) && !isNaN(lng)) newPath.push({ lat, lng });
+      }
+      if (newPath.length < 2) {
+        toast("❌ Pas assez de points valides.");
+        return;
+      }
+      state.path = newPath;
+      state.totalDistanceKm = 0;
+      state.steps = 0;
+      state.calories = 0;
+      for (let i = 1; i < state.path.length; i++) {
+        state.totalDistanceKm += distanceBetween(
+          state.path[i-1].lat, state.path[i-1].lng,
+          state.path[i].lat, state.path[i].lng
+        ) / 1000;
+      }
+      state.steps = state.totalDistanceKm / STEP_LENGTH_M;
+      drawPath();
+      updateStats();
+      toast(`✅ GPX importé : ${state.path.length} points, ${state.totalDistanceKm.toFixed(2)} km`);
+      const latlngs = state.path.map(p => [p.lat, p.lng]);
+      map.fitBounds(L.latLngBounds(latlngs), { padding: [30, 30] });
+    } catch (error) {
+      toast("❌ Erreur GPX : " + error.message);
+    }
+  };
+  input.click();
 }
 
 // --- Réinitialisation ---
 export function resetSession() {
-  if (state.watchId) {
-    navigator.geolocation.clearWatch(state.watchId);
-    state.watchId = null;
-  }
-  if (state.timerInterval) {
-    clearInterval(state.timerInterval);
-    state.timerInterval = null;
-  }
-  if (speechInterval) {
-    clearInterval(speechInterval);
-    speechInterval = null;
-  }
+  if (state.watchId) navigator.geolocation.clearWatch(state.watchId);
+  if (state.timerInterval) clearInterval(state.timerInterval);
+  if (speechInterval) clearInterval(speechInterval);
   state.tracking = false;
   state.path = [];
   state.totalDistanceKm = 0;
@@ -536,21 +650,10 @@ export function resetSession() {
   state.calories = 0;
   state.startTime = null;
   state.lastPosition = null;
-  if (polyline) {
-    polyline.remove();
-    polyline = null;
-  }
-  if (startMarker) {
-    startMarker.remove();
-    startMarker = null;
-  }
-  if (endMarker) {
-    endMarker.remove();
-    endMarker = null;
-  }
-  if (map) {
-    map.setView([48.8566, 2.3522], 15);
-  }
+  if (polyline) { polyline.remove(); polyline = null; }
+  if (startMarker) { startMarker.remove(); startMarker = null; }
+  if (endMarker) { endMarker.remove(); endMarker = null; }
+  if (map) map.setView([48.8566, 2.3522], 15);
   updateStats();
   durationEl.textContent = "00:00";
   updateButtons();
@@ -560,10 +663,7 @@ export function resetSession() {
 function resetSessionInternal() {
   if (state.watchId) navigator.geolocation.clearWatch(state.watchId);
   if (state.timerInterval) clearInterval(state.timerInterval);
-  if (speechInterval) {
-    clearInterval(speechInterval);
-    speechInterval = null;
-  }
+  if (speechInterval) clearInterval(speechInterval);
   state.tracking = false;
   state.path = [];
   state.totalDistanceKm = 0;
@@ -587,16 +687,15 @@ function calculateCalories(met, weightKg, durationHours) {
 function startTracking() {
   if (state.tracking) return;
   if (!navigator.geolocation) {
-    toast("La géolocalisation n'est pas supportée.");
+    toast("Géolocalisation non supportée.");
     return;
   }
   if (!map) {
-    toast("La carte n'est pas encore prête. Veuillez réessayer.");
+    toast("Carte pas encore prête.");
     return;
   }
-
   if (state.isDrawingRoute) {
-    toast("Vous ne pouvez pas démarrer le suivi en mode tracé. Terminez ou effacez l'itinéraire.");
+    toast("Terminez ou effacez l'itinéraire d'abord.");
     return;
   }
 
@@ -609,9 +708,7 @@ function startTracking() {
   state.tracking = true;
   updateButtons();
 
-  // Démarrer l'assistance vocale
   startSpeechUpdates();
-
   state.timerInterval = setInterval(updateDuration, 1000);
 
   state.watchId = navigator.geolocation.watchPosition(
@@ -621,7 +718,6 @@ function startTracking() {
         console.warn("Précision insuffisante :", accuracy, "m");
         return;
       }
-
       const raw = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       const smoothed = applySmoothing(raw.lat, raw.lng);
       const loc = smoothed;
@@ -644,14 +740,13 @@ function startTracking() {
         updateButtons();
 
         if (state.goalDistance > 0 && state.totalDistanceKm >= state.goalDistance) {
-          toast(`🎉 Objectif de ${state.goalDistance} km atteint !`);
-          speak("Objectif atteint ! Félicitations !");
+          toast(`🎉 Objectif atteint !`);
+          speak("Objectif atteint !");
         }
         if (state.routePoints.length > 1 && state.routeDistance > 0) {
-          const progress = (state.totalDistanceKm / state.routeDistance) * 100;
-          if (progress > 100) {
-            toast("🏁 Vous avez dépassé l'itinéraire !");
-            speak("Vous avez dépassé l'itinéraire.");
+          if (state.totalDistanceKm > state.routeDistance * 1.05) {
+            toast("🏁 Dépassement d'itinéraire !");
+            speak("Dépassement d'itinéraire.");
           }
         }
       } else {
@@ -682,53 +777,38 @@ function startTracking() {
 function stopTracking() {
   if (!state.tracking) return;
   state.tracking = false;
-  if (state.watchId) {
-    navigator.geolocation.clearWatch(state.watchId);
-    state.watchId = null;
-  }
-  if (state.timerInterval) {
-    clearInterval(state.timerInterval);
-    state.timerInterval = null;
-  }
-  if (speechInterval) {
-    clearInterval(speechInterval);
-    speechInterval = null;
-  }
+  if (state.watchId) navigator.geolocation.clearWatch(state.watchId);
+  if (state.timerInterval) clearInterval(state.timerInterval);
+  if (speechInterval) clearInterval(speechInterval);
   updateButtons();
   toast("Suivi arrêté.");
-  if (state.path.length >= 2) {
-    saveBtn.disabled = false;
-  }
+  if (state.path.length >= 2) saveBtn.disabled = false;
   updateStatusMessage();
 }
 
-// --- SAUVEGARDE ---
+// --- Sauvegarde ---
 async function saveActivity() {
   if (state.tracking) {
     toast("Arrêtez d'abord le suivi.");
     return;
   }
   if (state.path.length < 2) {
-    toast("Aucun parcours à sauvegarder.");
+    toast("Aucun parcours.");
     return;
   }
-
   if (!state.startTime) {
-    toast("Erreur : session non valide.");
+    toast("Session non valide.");
     return;
   }
-
   const durationSec = (Date.now() - state.startTime) / 1000;
   if (durationSec < 5) {
-    toast("Session trop courte (moins de 5s).");
+    toast("Session trop courte.");
     return;
   }
-
   if (state.totalDistanceKm <= 0) {
-    toast("Distance nulle, rien à sauvegarder.");
+    toast("Distance nulle.");
     return;
   }
-
   const activity = {
     id: uid("activity"),
     date: new Date().toISOString(),
@@ -741,9 +821,6 @@ async function saveActivity() {
     goal: state.goalDistance > 0 ? state.goalDistance : null,
     route: state.routePoints.length > 1 ? state.routePoints : null,
   };
-
-  console.log("📝 Sauvegarde de l'activité :", activity);
-
   try {
     await putItem("activities", activity);
     toast("✅ Activité sauvegardée !");
@@ -752,52 +829,26 @@ async function saveActivity() {
     await loadHistory();
     await renderStepsChart();
   } catch (e) {
-    console.error("❌ Erreur lors de la sauvegarde :", e);
-    toast("❌ Erreur lors de la sauvegarde : " + (e.message || "inconnue"));
+    toast("❌ Erreur : " + e.message);
   }
 }
 
-// --- PARTAGE ---
+// --- Partage ---
 async function shareActivity() {
   if (state.steps === 0 && state.totalDistanceKm === 0) {
-    toast("Aucune activité à partager.");
+    toast("Aucune activité.");
     return;
   }
-
-  const stepsText = state.steps > 0 ? `${Math.round(state.steps)} pas` : "0 pas";
-  const distanceText = state.totalDistanceKm.toFixed(2);
-  const caloriesText = state.calories > 0 ? `🔥 ${Math.round(state.calories)} kcal` : "";
-  
-  let text = `🏃 ${stepsText}`;
-  text += ` (${distanceText} km)`;
-  if (caloriesText) text += ` ${caloriesText}`;
-  text += ` ! #Wistoria #Fitness`;
-
-  if (state.startTime) {
-    const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-    const mins = Math.floor(elapsed / 60);
-    const secs = elapsed % 60;
-    if (mins > 0 || secs > 0) {
-      text += ` ⏱️ ${mins}min${secs > 0 ? ` ${secs}s` : ''}`;
-    }
-  }
-
-  if (state.goalDistance > 0) {
-    text += ` 🎯 Objectif : ${state.goalDistance} km`;
-  }
-
-  console.log("📤 Message de partage :", text);
-
+  let text = `🏃 ${Math.round(state.steps)} pas (${state.totalDistanceKm.toFixed(2)} km)`;
+  if (state.calories > 0) text += ` 🔥 ${Math.round(state.calories)} kcal`;
+  text += ` #Wistoria`;
+  if (state.goalDistance > 0) text += ` 🎯 Objectif : ${state.goalDistance} km`;
   try {
     if (navigator.share) {
-      await navigator.share({
-        title: "Mon activité Wistoria",
-        text: text,
-      });
-      toast("✅ Partagé !");
+      await navigator.share({ title: "Mon activité", text });
     } else if (navigator.clipboard) {
       await navigator.clipboard.writeText(text);
-      toast("📋 Texte copié dans le presse-papiers !");
+      toast("📋 Copié !");
     } else {
       const win = window.open('', '_blank', 'width=400,height=200');
       if (win) {
@@ -805,29 +856,21 @@ async function shareActivity() {
           <html><body style="font-family:sans-serif;padding:20px;text-align:center;">
             <h3>📤 Partager</h3>
             <p style="background:#f0f0f0;padding:15px;border-radius:8px;word-break:break-all;">${text}</p>
-            <p>Sélectionnez et copiez le texte ci-dessus.</p>
             <button onclick="window.close()" style="padding:8px 20px;border:none;background:#16c7b7;color:white;border-radius:4px;cursor:pointer;">Fermer</button>
           </body></html>
         `);
-        toast("📤 Fenêtre de partage ouverte.");
-      } else {
-        toast("❌ Impossible de partager.");
       }
     }
-  } catch (error) {
-    console.error("❌ Erreur de partage :", error);
-    if (error.name !== 'AbortError') {
-      toast("❌ Erreur lors du partage.");
-    }
+  } catch (e) {
+    if (e.name !== 'AbortError') toast("❌ Erreur de partage.");
   }
 }
 
-// --- Graphique des pas ---
+// --- Graphique ---
 async function renderStepsChart() {
   if (!stepsChartCanvas) return;
   if (typeof Chart === 'undefined') {
-    console.warn("Chart.js non chargé.");
-    stepsChartCanvas.parentNode.innerHTML = `<div class="empty-state">📊 Graphique indisponible</div>`;
+    stepsChartCanvas.parentNode.innerHTML = `<div class="empty-state">📊 Chart.js non chargé</div>`;
     return;
   }
   try {
@@ -836,9 +879,9 @@ async function renderStepsChart() {
       stepsChartCanvas.parentNode.innerHTML = `<div class="empty-state">Pas encore de données.</div>`;
       return;
     }
-    const last7 = activities.slice(-7);
-    const labels = last7.map(a => new Date(a.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }));
-    const data = last7.map(a => a.steps || 0);
+    const last30 = activities.slice(-30);
+    const labels = last30.map(a => new Date(a.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }));
+    const data = last30.map(a => a.steps || 0);
     if (stepsChartInstance) stepsChartInstance.destroy();
     stepsChartInstance = new Chart(stepsChartCanvas, {
       type: "bar",
@@ -847,20 +890,14 @@ async function renderStepsChart() {
         datasets: [{
           label: "Pas",
           data: data.length ? data : [0],
-          backgroundColor: "rgba(22, 199, 183, 0.7)",
+          backgroundColor: "rgba(22,199,183,0.7)",
           borderRadius: 4,
         }]
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true } }
-      }
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
     });
-  } catch (error) {
-    console.error("Erreur graphique :", error);
-    stepsChartCanvas.parentNode.innerHTML = `<div class="empty-state">Erreur de chargement du graphique.</div>`;
+  } catch (e) {
+    stepsChartCanvas.parentNode.innerHTML = `<div class="empty-state">Erreur graphique</div>`;
   }
 }
 
@@ -869,11 +906,11 @@ async function loadHistory() {
   try {
     const activities = await getAll("activities");
     if (!activities || activities.length === 0) {
-      historyList.innerHTML = `<div class="empty-state">Aucune activité enregistrée.</div>`;
+      historyList.innerHTML = `<div class="empty-state">Aucune activité.</div>`;
       return;
     }
     activities.sort((a, b) => new Date(b.date) - new Date(a.date));
-    historyList.innerHTML = activities.slice(0, 15).map((act) => {
+    historyList.innerHTML = activities.slice(0, 15).map(act => {
       const date = new Date(act.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
       const time = new Date(act.date).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
       const dur = Math.floor(act.duration / 60) + "min";
@@ -890,7 +927,6 @@ async function loadHistory() {
       `;
     }).join("");
   } catch (e) {
-    console.error("Erreur historique :", e);
     historyList.innerHTML = `<div class="empty-state">Erreur de chargement.</div>`;
   }
 }
@@ -902,7 +938,7 @@ function retryMap() {
     toast("Carte recentrée.");
     return;
   }
-  toast("Tentative de chargement de la carte...");
+  toast("Rechargement de la carte...");
   if (typeof L === "undefined") {
     const script = document.createElement("script");
     script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
@@ -916,7 +952,7 @@ function retryMap() {
 // --- Météo ---
 async function fetchWeather() {
   weatherModal.style.display = "grid";
-  weatherLocation.textContent = "Recherche de votre position...";
+  weatherLocation.textContent = "Recherche...";
   weatherEmoji.textContent = "⏳";
   weatherTemp.textContent = "--°C";
   weatherDesc.textContent = "Chargement...";
@@ -924,107 +960,56 @@ async function fetchWeather() {
   weatherWind.textContent = "-- km/h";
   weatherUV.textContent = "--";
 
-  let lat = 48.8566;
-  let lon = 2.3522;
-
+  let lat = 48.8566, lon = 2.3522;
   if (navigator.geolocation) {
     try {
       const pos = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 8000,
-        });
+        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 8000 });
       });
       lat = pos.coords.latitude;
       lon = pos.coords.longitude;
     } catch (e) {
-      console.warn("Géolocalisation échouée, fallback sur Paris.", e);
-      toast("Position non trouvée, affichage de la météo Paris.");
+      toast("Position non trouvée, fallback Paris.");
     }
   }
-
   try {
     const url = `https://wttr.in/${lat},${lon}?format=j1&lang=fr`;
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-
     const current = data.current_condition[0];
     const nearest = data.nearest_area?.[0] || {};
-    const areaName = nearest.areaName?.[0]?.value || `Lat ${lat.toFixed(2)}, Lon ${lon.toFixed(2)}`;
-    
+    const areaName = nearest.areaName?.[0]?.value || `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
     const temp = current.temp_C || "--";
     const desc = current.weatherDesc?.[0]?.value || "Inconnu";
     const humidity = current.humidity || "--";
-    
-    let windSpeed = current.windSpeed || "--";
-    let windDirText = current.winddir16Point || "";
-    
-    function getWindEmoji(speed) {
-      const s = parseFloat(speed);
-      if (isNaN(s) || s < 0) return "🍃";
-      if (s < 5) return "🍃";
-      if (s < 15) return "🌬️";
-      if (s < 30) return "💨";
-      if (s < 50) return "🌪️";
-      return "🌀";
-    }
-    
-    if (windSpeed === "N/A" || windSpeed === "" || windSpeed === "--") {
-      windSpeed = "🍃 Calme";
-    } else {
-      const emoji = getWindEmoji(windSpeed);
-      if (windDirText && windDirText !== "N/A") {
-        windSpeed = `${emoji} ${windSpeed} km/h (${windDirText})`;
-      } else {
-        windSpeed = `${emoji} ${windSpeed} km/h`;
-      }
-    }
-
+    let wind = current.windSpeed || "--";
+    if (wind === "N/A" || wind === "--") wind = "🍃 Calme";
+    else wind = `💨 ${wind} km/h`;
     let uv = current.uvIndex || "--";
-    if (uv === "0" || uv === 0 || uv === "0.0") {
-      uv = "🌙 N/A (nuit)";
-    } else if (uv === "N/A" || uv === "--" || uv === "") {
-      uv = "N/A";
-    } else {
-      const uvNum = parseFloat(uv);
-      if (uvNum <= 2) uv = `🟢 ${uv} (faible)`;
-      else if (uvNum <= 5) uv = `🟡 ${uv} (modéré)`;
-      else if (uvNum <= 7) uv = `🟠 ${uv} (élevé)`;
-      else if (uvNum <= 10) uv = `🔴 ${uv} (très élevé)`;
-      else uv = `🟣 ${uv} (extrême)`;
-    }
-
+    if (uv === "0" || uv === 0) uv = "🌙 N/A (nuit)";
     let emoji = "🌤️";
-    const lowerDesc = desc.toLowerCase();
-    if (lowerDesc.includes("pluie") || lowerDesc.includes("averse")) emoji = "🌧️";
-    else if (lowerDesc.includes("neige")) emoji = "❄️";
-    else if (lowerDesc.includes("orage") || lowerDesc.includes("tonnerre")) emoji = "⛈️";
-    else if (lowerDesc.includes("brouillard") || lowerDesc.includes("brume")) emoji = "🌫️";
-    else if (lowerDesc.includes("soleil") || lowerDesc.includes("ensoleillé") || lowerDesc.includes("clair")) emoji = "☀️";
-    else if (lowerDesc.includes("nuage")) emoji = "☁️";
-
+    const d = desc.toLowerCase();
+    if (d.includes("pluie")) emoji = "🌧️";
+    else if (d.includes("neige")) emoji = "❄️";
+    else if (d.includes("orage")) emoji = "⛈️";
+    else if (d.includes("brouillard")) emoji = "🌫️";
+    else if (d.includes("soleil") || d.includes("ensoleillé")) emoji = "☀️";
+    else if (d.includes("nuage")) emoji = "☁️";
     weatherLocation.textContent = `📍 ${areaName}`;
     weatherEmoji.textContent = emoji;
     weatherTemp.textContent = `${temp}°C`;
     weatherDesc.textContent = desc;
     weatherHumidity.textContent = `${humidity}%`;
-    weatherWind.textContent = windSpeed;
+    weatherWind.textContent = wind;
     weatherUV.textContent = uv;
-
     toast("Météo chargée !");
-
   } catch (error) {
-    console.error("Erreur météo :", error);
-    weatherDesc.textContent = "❌ Impossible de charger la météo.";
-    weatherEmoji.textContent = "⚠️";
-    toast("Erreur de chargement de la météo.");
+    toast("Erreur météo.");
   }
 }
 
-function closeWeather() {
-  weatherModal.style.display = "none";
-}
+function closeWeather() { weatherModal.style.display = "none"; }
 
 // --- Initialisation ---
 export function initActivityPage() {
@@ -1033,7 +1018,7 @@ export function initActivityPage() {
   const prefs = getPrefs();
   displayWeight.textContent = prefs.weight || 70;
 
-  // Événements
+  // Attacher les événements
   if (startBtn) startBtn.addEventListener("click", startTracking);
   if (stopBtn) stopBtn.addEventListener("click", stopTracking);
   if (saveBtn) saveBtn.addEventListener("click", saveActivity);
@@ -1065,6 +1050,19 @@ export function initActivityPage() {
   if (finishRouteBtn) finishRouteBtn.addEventListener("click", finishRoute);
   if (clearRouteBtn) clearRouteBtn.addEventListener("click", clearRoute);
 
+  if (toggleVoiceBtn) {
+    toggleVoiceBtn.addEventListener("click", toggleVoice);
+    updateVoiceButton();
+  }
+  if (importGpxBtn) {
+    importGpxBtn.addEventListener("click", importGPX);
+  }
+  if (toggleMapBtn) {
+    toggleMapBtn.addEventListener("click", toggleMapSize);
+    toggleMapBtn.textContent = '⛶';
+    toggleMapBtn.title = 'Agrandir la carte';
+  }
+
   if (goalDistanceInput) {
     goalDistanceInput.addEventListener("input", () => {
       const val = parseFloat(goalDistanceInput.value) || 0;
@@ -1073,14 +1071,30 @@ export function initActivityPage() {
     });
   }
 
-  try {
-    loadHistory();
-  } catch (e) { console.warn(e); }
-  try {
-    renderStepsChart();
-  } catch (e) { console.warn(e); }
+  // ===== Gestion des dropdowns (toggle) =====
+  document.querySelectorAll('[data-dropdown]').forEach(btn => {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      const dropdownId = this.dataset.dropdown;
+      const dropdown = document.getElementById(dropdownId);
+      if (!dropdown) return;
+      // Fermer tous les autres dropdowns
+      document.querySelectorAll('.dropdown.open').forEach(d => {
+        if (d !== dropdown) d.classList.remove('open');
+      });
+      // Toggle celui-ci
+      dropdown.classList.toggle('open');
+    });
+  });
 
-  // Initialisation de la carte
+  // Fermer les dropdowns si on clique ailleurs
+  document.addEventListener('click', function() {
+    document.querySelectorAll('.dropdown.open').forEach(d => d.classList.remove('open'));
+  });
+
+  try { loadHistory(); } catch (e) {}
+  try { renderStepsChart(); } catch (e) {}
+
   if (typeof L !== "undefined") {
     console.log("✅ Leaflet disponible, initMap()");
     initMap();

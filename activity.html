@@ -55,10 +55,10 @@
         <!-- Message de statut -->
         <div id="statusMessage" class="status-message">⏸️ En attente</div>
 
-        <!-- Contrôles -->
+        <!-- Contrôles principaux -->
         <div class="activity-controls">
           <div class="field">
-            <label for="activityType">Type d'activité</label>
+            <label for="activityType">Type</label>
             <select id="activityType">
               <option value="walk">Marche</option>
               <option value="run">Course</option>
@@ -70,7 +70,7 @@
           </div>
         </div>
 
-        <!-- Barre d'objectif distance (illimité) -->
+        <!-- Barre d'objectif (sans limite) -->
         <div class="objective-bar">
           <label for="goalDistanceKm">🎯 Objectif (km) :</label>
           <input type="number" id="goalDistanceKm" value="5" min="0" step="0.1" placeholder="Illimité">
@@ -78,20 +78,34 @@
           <div class="progress-track"><div id="goalProgressBar" style="width:0%;"></div></div>
         </div>
 
-        <!-- Boutons d'action -->
+        <!-- Barre d'actions compacte avec dropdowns -->
         <div class="action-bar">
           <button class="btn primary" id="startActivityBtn">▶ Démarrer</button>
           <button class="btn warning" id="stopActivityBtn" disabled>⏹ Arrêter</button>
           <button class="btn" id="saveActivityBtn" disabled>💾 Sauvegarder</button>
-          <button class="btn" id="shareBtn">📤 Partager</button>
-          <button class="btn" id="resetActivityBtn">🔄 Réinitialiser</button>
-          <button class="btn" id="weatherBtn">🌤️ Météo</button>
-          <!-- Itinéraire -->
-          <button class="btn" id="toggleVoiceBtn">🔊 Voix</button>
-          <button class="btn" id="startRouteBtn">✏️ Tracer itinéraire</button>
-          <button class="btn" id="cancelLastPointBtn" disabled>↩️ Annuler point</button>
-          <button class="btn" id="finishRouteBtn" disabled>✅ Terminer itinéraire</button>
-          <button class="btn" id="clearRouteBtn">🗑️ Effacer itinéraire</button>
+
+          <!-- Dropdown "Plus" -->
+          <div class="dropdown" id="moreDropdown">
+            <button class="btn" id="moreBtn" data-dropdown="moreDropdown">⋯ Plus</button>
+            <div class="dropdown-content" id="moreMenu">
+              <button class="btn" id="shareBtn">📤 Partager</button>
+              <button class="btn" id="resetActivityBtn">🔄 Réinitialiser</button>
+              <button class="btn" id="weatherBtn">🌤️ Météo</button>
+              <button class="btn" id="toggleVoiceBtn">🔊 Voix</button>
+            </div>
+          </div>
+
+          <!-- Dropdown "Itinéraire" -->
+          <div class="dropdown" id="routeDropdown">
+            <button class="btn" id="routeMenuBtn" data-dropdown="routeDropdown">🗺️ Itinéraire</button>
+            <div class="dropdown-content" id="routeMenu">
+              <button class="btn" id="startRouteBtn">✏️ Tracer</button>
+              <button class="btn" id="cancelLastPointBtn" disabled>↩️ Annuler point</button>
+              <button class="btn" id="finishRouteBtn" disabled>✅ Terminer</button>
+              <button class="btn" id="clearRouteBtn">🗑️ Effacer</button>
+              <button class="btn" id="importGpxBtn">📂 Importer GPX</button>
+            </div>
+          </div>
         </div>
 
         <!-- Carte -->
@@ -100,6 +114,7 @@
           <div class="map-controls">
             <button class="btn icon-btn" id="centerMapBtn" title="Centrer sur ma position">📍</button>
             <button class="btn icon-btn" id="fitPathBtn" title="Voir tout le tracé">🗺️</button>
+            <button class="btn icon-btn" id="toggleMapBtn" title="Agrandir la carte">⛶</button>
           </div>
           <div id="mapPlaceholder" class="map-placeholder">
             <div>
@@ -110,12 +125,12 @@
           </div>
         </section>
 
-        <!-- Graphique de progression -->
+        <!-- Graphique -->
         <section class="panel">
           <div class="section-head">
             <div>
               <h2>Progression des pas</h2>
-              <p>Évolution sur les 7 derniers jours.</p>
+              <p>Évolution sur les 30 derniers jours.</p>
             </div>
           </div>
           <div class="canvas-wrap"><canvas id="stepsChart"></canvas></div>

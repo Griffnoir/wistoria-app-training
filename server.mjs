@@ -3,7 +3,7 @@ import { extname, join, normalize } from "node:path";
 import { createServer } from "node:http";
 
 const root = process.cwd();
-const port = Number(process.env.PORT || 4178);
+const port = Number(process.env.PORT || 4179);
 
 const types = {
   ".html": "text/html; charset=utf-8",
